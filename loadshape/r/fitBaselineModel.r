@@ -770,6 +770,23 @@ GoodnessOfFit = function(time1, loadVec, time2, baselinePred, verbose=1) {
 	return(Out)
 }
 
+#
+# Here's the call to the main program in baseline.R; in order to use the same command line
+# call that we use in baseline.r (so as to maintain backwards compatibility) we need to
+# rewrite our main() so we can call it this way, 
+# (and extend by adding additional optional variables).
+# main(inLoadFile=inLoadFile,
+#	timeStampFile=timeStampFile,
+#	inTemperatureFile=inTemperatureFile,
+#	inPredTemperatureFile=inPredTemperatureFile,
+#	outBaselineFile=outBaselineFile,
+#	outGoodnessOfFitFile=outGoodnessOfFitFile,
+#	intervalMinutes=intervalMinutes,
+#	timescaleDays=timescaleDays, 
+#	fahrenheit = fahrenheit,
+#	verbose=verbosity)
+
+
 main = function(loadFile,occFile=NULL,weatherDirectory=NULL,tempDat=NULL,xPredThresh=NULL,
 	verbose=0) {
 	loadDat = read.table(loadFile,
@@ -790,7 +807,7 @@ main = function(loadFile,occFile=NULL,weatherDirectory=NULL,tempDat=NULL,xPredTh
 	dataStruct = createDataStructure(tLoad,yLoad,tTemp,yTemp,tOcc,yOcc,
 		xPredThresh=xPredThresh,verbose=verbose)
 	#preparedData = prepareLBNLmodel(dataStruct)
-
+	# Need to call fitData here
 
 	Out = NULL
 	Out$dataStruct = dataStruct
