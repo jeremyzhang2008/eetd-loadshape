@@ -47,6 +47,63 @@ getTime = function(timeInfo,verbose=1,format=NULL) {
 }
 
 #
+combineWeatherData = function(directory=NULL,intervalMinutes=15) {
+	# This function was written to combine weather data (specifically
+	# outdoor air temperature) from several datafiles, and generate a single file
+	# from them. This is motivated by the need to handle Weather Underground files:
+	# we typically get data from several weather stations within a zip code, and need
+	# to generate a single temperature file.
+	if(is.null(directory)) {
+		command = "ls *.csv"
+	} else {
+		command = paste("ls ",directory,"/*.csv",sep="")
+	}
+	fileList = system(command, intern=T)
+	nFiles = length(fileList)
+	
+	iFile=0
+	start=rep(NA,length(fileList))
+	end=rep(NA,length(fileList))
+	
+	datList = NULL
+	for (file in fileList) {
+		iFile = iFile+1
+		dat = read.table(file,header=F,sep=",",as.is=T)
+		start[iFile] = dat[1,1]
+		end[iFile] = tail(dat[,1],1)
+		datList[[iFile]] = dat
+	}
+	
+	outStart = min(as.numeric(getTime(start,format="%m/%d/%Y %H:%M")))
+	# start at the top of the first hour for which we have data.
+	
+	outEnd = max(as.numeric(getTime(end,format="%m/%d/%Y %H:%M")))
+	outVec = seq(from=outStart,to=outEnd,by=intervalMinutes*60)
+	
+	val = matrix(NA,nrow=length(outVec),ncol=nFiles)
+	# interpolate the data from each datafile to get a prediction at each output 
+	# timestamp
+	for (iFile in 1:nFiles) {
+		t = as.numeric(getTime(datList[[iFile]][,1],format="%m/%d/%Y %H:%M"))
+		val[,iFile] = approx(t,datList[[iFile]][,2],outVec,method="linear")$y
+	}
+	
+	# At each timestamp, take the median of the values from the different datafiles.
+	# Taking the median makes this robust against one or more stations returning
+	# bad values, which happens fairly frequently.
+	outVal = apply(val,1,median,na.rm=T)
+	
+	
+	outTime = getTime(outVec)
+	outFrame = data.frame(outTime,outVal)
+	Out=NULL
+	Out$interpolatedData = val
+	Out$results = outFrame
+	Out$time = outTime
+	return(Out)
+	
+
+#
 putTimeSeriesOnNiceIntervals = function(timeVec,yVec,outStart=NULL,outEnd=NULL,
 	intervalMinutes=60) {
 	# Takes an input time series recorded at arbitrary time intervals, outputs 
