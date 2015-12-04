@@ -46,6 +46,8 @@ getTime = function(timeInfo,verbose=1,format=NULL) {
 	return(time)	
 }
 
+
+
 #
 combineWeatherData = function(directory=NULL,intervalMinutes=15) {
 	# This function was written to combine weather data (specifically
@@ -425,7 +427,7 @@ createDataStructure = function(tLoad,yLoad,tTemp=NULL,yTemp=NULL,
 		TempInfo = imputeTimeSeries(tTemp,yTemp,outStart=tStart,outEnd=tEnd,
 			intervalMinutes=intervalMinutes)
 			
-		# Separate times of the week into "unoccupied mode", "startup mode",
+		# Split times of the week into "unoccupied mode", "startup mode",
 		# and "occupied mode." Modes are based on when the building is more or
 		# less sensitive to outdoor air temperature, not on when the building is
 		# actually occupied. (More sensitive to outdoor temperature presumably means
@@ -787,8 +789,10 @@ GoodnessOfFit = function(time1, loadVec, time2, baselinePred, verbose=1) {
 #	verbose=verbosity)
 
 
-main = function(loadFile,occFile=NULL,weatherDirectory=NULL,tempDat=NULL,xPredThresh=NULL,
+
+main = function(loadFile,timeStampFile=NULL,occFile=NULL,weatherDirectory=NULL,tempDat=NULL,xPredThresh=NULL,
 	verbose=0) {
+	
 	loadDat = read.table(loadFile,
 		header=T,sep=",",as.is=T)
 	tLoad = getTime(loadDat[,1])
