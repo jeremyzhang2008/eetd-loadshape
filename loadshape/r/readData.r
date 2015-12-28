@@ -20,27 +20,37 @@ readInputFiles = function(inLoadFile,
 		# Make predictions for the same times for which load data are provided.
 		tPred = tLoad
 	} else {
+		# Use timestamps that are explicitly provided
 		tPredDat = read.table(timeStampFile,header=F,sep=",",as.is=T)
 		tPred = getTime(tPredDat[,1])
 	}
 	
-	occDat = read.table(occFile, header=F,sep=",",as.is=T)
-	tOcc = getTime(occDat[,1])
-	yOcc = occDat[,2]
-	
-	if (is.null(tempDat)) {
-		tempDat = read.table(inTemperatureFile)
-	}	
-	tTemp = tempDat[,1]
-	yTemp = tempDat[,2]
-	
-	if (is.null(inPredTemperatureFile)) {
-		predTempDat = read.table(inTemperatureFile,header=F,sep=",",as.is=T)
+	if (!is.null(occFile)) {
+		occDat = read.table(occFile, header=F,sep=",",as.is=T)
+		tOcc = getTime(occDat[,1])
+		yOcc = occDat[,2]
 	}
-	tPredTemp = predTempDat[,1]
-	yPredTemp = predTempDat[,2]
 	
-	dataStruct = createDataStructure(tLoad,yLoad,tTemp,yTemp,tOcc,yOcc,
+	if (is.null(inTemperatureFile)) {
+		# Temperature data are provided
+		tempDat = read.table(inTemperatureFile)
+		tTemp = tempDat[,1]
+		yTemp = tempDat[,2]
+		
+	}		
+	if (is.null(inPredTemperatureFile) {
+		if (!is.null(inTemperatureFile)) {
+			# Prediction temperatures not provided in a separate file
+			# so take them from the training temperature data file.
+			predTempDat = read.table(inTemperatureFile,header=F,sep=",",as.is=T)
+			tPredTemp = predTempDat[,1]
+			yPredTemp = predTempDat[,2]		
+	} else {
+		# No prediction temperature data are available at all
+	}
+	
+	
+	dataStruct = createDataStructure(tLoad,yLoad,tPred,tTemp,yTemp,tOther,yOther,
 		xPredThresh=xPredThresh,verbose=verbose)
 	
 	return(dataStruct)

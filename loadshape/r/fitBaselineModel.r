@@ -117,6 +117,8 @@ putTimeSeriesOnNiceIntervals = function(timeVec,yVec,outStart=NULL,outEnd=NULL,
 	# than desired for the output. First deal with the higher-frequency case (take the
 	# mean of all of the data in the interval), then handle the lower-frequency case.
 	#
+	
+	
 	timeIn = getTime(timeVec)
 	numTimeIn = as.numeric(timeIn)
 	
