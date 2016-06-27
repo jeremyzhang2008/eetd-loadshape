@@ -1,7 +1,129 @@
+# --------------------------------------------------
+# Building Energy Baseline Analysis Package
 #
-#
-#####################
-#####################
+# Copyright (c) 2013, The Regents of the University of California, Department
+# of Energy contract-operators of the Lawrence Berkeley National Laboratory.
+# All rights reserved.
+# 
+# The Regents of the University of California, through Lawrence Berkeley National
+# Laboratory (subject to receipt of any required approvals from the U.S.
+# Department of Energy). All rights reserved.
+# 
+# If you have questions about your rights to use or distribute this software,
+# please contact Berkeley Lab's Technology Transfer Department at TTD@lbl.gov
+# referring to "Building Energy Baseline Analysis Package (LBNL Ref 2014-011)".
+# 
+# NOTICE: This software was produced by The Regents of the University of
+# California under Contract No. DE-AC02-05CH11231 with the Department of Energy.
+# For 5 years from November 1, 2012, the Government is granted for itself and
+# others acting on its behalf a nonexclusive, paid-up, irrevocable worldwide
+# license in this data to reproduce, prepare derivative works, and perform
+# publicly and display publicly, by or on behalf of the Government. There is
+# provision for the possible extension of the term of this license. Subsequent to
+# that period or any extension granted, the Government is granted for itself and
+# others acting on its behalf a nonexclusive, paid-up, irrevocable worldwide
+# license in this data to reproduce, prepare derivative works, distribute copies
+# to the public, perform publicly and display publicly, and to permit others to
+# do so. The specific term of the license can be identified by inquiry made to
+# Lawrence Berkeley National Laboratory or DOE. Neither the United States nor the
+# United States Department of Energy, nor any of their employees, makes any
+# warranty, express or implied, or assumes any legal liability or responsibility
+# for the accuracy, completeness, or usefulness of any data, apparatus, product,
+# or process disclosed, or represents that its use would not infringe privately
+# owned rights.
+# --------------------------------------------------
+
+readInputFiles = function(loadFile, timeStampFile=NULL, inTemperatureFile=NULL, 
+                          inPredTemperatureFile=NULL, xFile=NULL, predXfile=NULL, outGoodnessOfFitFile=NULL,
+                          fahrenheit=T, verbose=0) {
+  if (verbose > 2) { print("  Starting readInputFiles()")}
+  tTemp = NULL
+  TempC = NULL
+  TempF = NULL
+  tTempPred = NULL
+  predTempC = NULL
+  predTempF = NULL
+  tX = NULL
+  xMat = NULL
+  tPredX = NULL
+  xPredMat = NULL
+  
+  loadDat = read.table(loadFile, header=F, sep=",", as.is=T)
+  tLoad = getTime(loadDat[,1])
+  yLoad = loadDat[,2]
+  
+  if (is.null(timeStampFile)) { 
+    tPred = tLoad
+  } else {
+    tPredDat = read.table(timeStampFile, header=F, sep=",", as.is=T)
+    tPred = getTime(tPredDat[,1])
+  }
+  
+  if (!is.null(inTemperatureFile)) {
+    tempDat = read.table(inTemperatureFile, header=F, sep=",", as.is=T)
+    tTemp = getTime(tempDat[,1])
+    yTemp = tempDat[,2]
+    if (fahrenheit) {
+      TempF = yTemp
+      TempC = (yTemp-32)*5/9
+    } else {
+      TempC = yTemp
+      TempF = yTemp*9/5 + 32
+    }
+  }
+  
+  # If only one temperature file is provided, use it for both fit and prediction periods
+  if (is.null(inPredTemperatureFile) && !is.null(inTemperatureFile)) {
+    tTempPred = tTemp
+    predTempF = TempF
+    predTempC = TempC
+  } else {
+    tempPredDat = read.table(inPredTemperatureFile, header=F, sep=",", as.is=T)
+    tTempPred = getTime(tempPredDat[,1])
+    yPredTemp = tempPredDat[,2]
+    if (fahrenheit) {
+      predTempF = yPredTemp
+      predTempC = (yPredTemp-32)*5/9
+    } else {
+      predTempC = yPredTemp
+      predTempF = yPredTemp*9/5 + 32
+    }
+  }
+  
+  # If only one file of additional predictive variables is provided, use it for both fit and prediction periods
+  if (!is.null(xFile)) {
+    xDat = read.table(xFile, header=F, sep=",", as.is=T)
+    tX = getTime(xDat[,1])
+    xMat = xDat[,-1]
+  }  
+  
+  if (is.null(predXfile) && !is.null(xFile)) { predXfile = xFile}
+  xPredDat = read.table(predXfile, header=F, sep=",", as.is=T)
+  tPredX = getTime(xPredDat[,1])
+  xPredMat = xPredDat[,-1]
+  
+  Out = NULL
+  Out$fit = NULL
+  Out$fit$tLoad = tLoad
+  Out$fit$yLoad = yLoad
+  Out$fit$tTemp = tTemp
+  Out$fit$TempF= TempF
+  Out$fit$TempC = TempC
+  Out$fit$tX = tX
+  Out$fit$xMat = xMat
+  
+  Out$pred = NULL
+  Out$pred$tPred = tPred
+  Out$pred$tTemp = tTempPred
+  Out$pred$TempF = predTempF
+  Out$pred$TempC = predTempC
+  Out$pred$tX = tPredX
+  Out$pred$xMat = xPredMat
+  
+  if (verbose > 2) { print("Leaving readInputFiles()")}
+  return(Out)
+}
+
 
 getTime = function(timeInfo,verbose=1,format=NULL) {
 	# given a vector of timestamps using one of the following timestamp formats, return
@@ -11,11 +133,11 @@ getTime = function(timeInfo,verbose=1,format=NULL) {
 	# 2. Seconds since 1970-01-01 00:00:00
 	# 3. Milliseconds since 1970-01-01 00:00:00 (as generated by sMAP for example)
 	# 
-	if (verbose > 1) { print("starting getTime()")}
+	if (verbose > 3) { print("  Starting getTime()")}
 
 	if (class(timeInfo)[1] %in% c("POSIXct","POSIXlt")) { return(timeInfo) }
 	
-	if (verbose > 3) { print(timeInfo[1]) }
+	if (verbose > 4) { print(timeInfo[1]) }
 	if (!is.null(format)) {
 		time = strptime(timeInfo,format=format)
 		return(time)
@@ -43,253 +165,362 @@ getTime = function(timeInfo,verbose=1,format=NULL) {
 		}		
 		time = as.POSIXlt(timeNum,origin="1970-01-01")
 	}
+  
+  if (verbose > 3) { print("leaving getTime()")}
 	return(time)	
 }
 
-
-
 #
-combineWeatherData = function(directory=NULL,intervalMinutes=15) {
-	# This function was written to combine weather data (specifically
-	# outdoor air temperature) from several datafiles, and generate a single file
-	# from them. This is motivated by the need to handle Weather Underground files:
-	# we typically get data from several weather stations within a zip code, and need
-	# to generate a single temperature file.
-	if(is.null(directory)) {
-		command = "ls *.csv"
-	} else {
-		command = paste("ls ",directory,"/*.csv",sep="")
-	}
-	fileList = system(command, intern=T)
-	nFiles = length(fileList)
-	
-	iFile=0
-	start=rep(NA,length(fileList))
-	end=rep(NA,length(fileList))
-	
-	datList = NULL
-	for (file in fileList) {
-		iFile = iFile+1
-		dat = read.table(file,header=F,sep=",",as.is=T)
-		start[iFile] = dat[1,1]
-		end[iFile] = tail(dat[,1],1)
-		datList[[iFile]] = dat
-	}
-	
-	outStart = min(as.numeric(getTime(start,format="%m/%d/%Y %H:%M")))
-	# start at the top of the first hour for which we have data.
-	
-	outEnd = max(as.numeric(getTime(end,format="%m/%d/%Y %H:%M")))
-	outVec = seq(from=outStart,to=outEnd,by=intervalMinutes*60)
-	
-	val = matrix(NA,nrow=length(outVec),ncol=nFiles)
-	# interpolate the data from each datafile to get a prediction at each output 
-	# timestamp
-	for (iFile in 1:nFiles) {
-		t = as.numeric(getTime(datList[[iFile]][,1],format="%m/%d/%Y %H:%M"))
-		val[,iFile] = approx(t,datList[[iFile]][,2],outVec,method="linear")$y
-	}
-	
-	# At each timestamp, take the median of the values from the different datafiles.
-	# Taking the median makes this robust against one or more stations returning
-	# bad values, which happens fairly frequently.
-	outVal = apply(val,1,median,na.rm=T)
-	
-	
-	outTime = getTime(outVec)
-	outFrame = data.frame(outTime,outVal)
-	Out=NULL
-	Out$interpolatedData = val
-	Out$results = outFrame
-	Out$time = outTime
-	return(Out)
-	
-
-#
-putTimeSeriesOnNiceIntervals = function(timeVec,yVec,outStart=NULL,outEnd=NULL,
-	intervalMinutes=60) {
-	# Takes an input time series recorded at arbitrary time intervals, outputs 
-	# an interpolated time series of mean values at regular intervals.
-	# Output starts at the top of the hour of the first data point (or at an optionally specified
-	# starting location), at specified intervals. 
-	#
-	# We need to handle the case when we have data at either higher or lower frequency
-	# than desired for the output. First deal with the higher-frequency case (take the
-	# mean of all of the data in the interval), then handle the lower-frequency case.
-	#
-	
-	
-	timeIn = getTime(timeVec)
-	numTimeIn = as.numeric(timeIn)
-	
-	if (is.null(outStart)) { 
-		# if no time is specified for the start of the output series, start at the top of
-		# the hour for the first hour that has data.
-		outStart = strptime(timeIn[1],format="%Y-%m-%d %H") 
-	}
-	numTimeStart = as.numeric(getTime(outStart))
-		
-	if (is.null(outEnd)) {
-		numTimeEnd = as.numeric(tail(timeIn,1))
-	} else {
-		numTimeEnd = as.numeric(getTime(outEnd))
-	}
-	outTimeNum = seq(from=numTimeStart,to=numTimeEnd,by=intervalMinutes*60)
-	
-	intervalsSinceStart = (numTimeIn-numTimeStart)/(intervalMinutes*60)
-	nIntervalsSinceStart = floor(intervalsSinceStart)
-	maxIntervals = floor((numTimeEnd-numTimeStart)/(intervalMinutes*60))
-	
-	aggregatedDat = aggregate(yVec,by=list(nIntervalsSinceStart),
-		mean,na.rm=T)
-	
-	aggInterval = aggregatedDat[[1]]
-	okNotTooEarly = aggInterval >= 0
-	okNotTooLate = aggInterval < maxIntervals
-		
-	outTime = getTime(outTimeNum)
-	nPoints = length(outTime)
-	
-	yOut = rep(NA,nPoints)
-	ok = okNotTooEarly & okNotTooLate
-	yOut[aggInterval[ok]+1] = aggregatedDat[[2]][ok]	
-	yOut = yOut[1:nPoints]
-	
-	# Now interpolate to fill in any NA values
-	okNotNA = !is.na(yOut)
-	yOut = approx(outTimeNum[okNotNA],yOut[okNotNA],outTimeNum,rule=1)$y
-	
-	
-	Out = NULL
-	Out$time = outTime
-	Out$y = yOut
-	return(Out)
+imputeTimeSeries = function(timeVec, yVec, xTime=NULL, xMat=NULL, outTimes=NULL, 
+                            timeFactor="TOW", intervalMinutes = NULL, verbose=0) {
+  if (verbose > 3) { print("   Starting imputeTimeSeries()")}
+  if (!(timeFactor %in% c("TOW","TOD"))) { stop("Unrecognized time pattern in imputeTimeSeries.") }
+  if (is.null(outTimes)) { outTimes = timeVec }
+  if (is.null(intervalMinutes)) {intervalMinutes = median(diff(as.numeric(timeVec)))/60 }
+  
+  minuteOfWeek = 24 * 60 * timeVec$wday + 60 * timeVec$hour + timeVec$min
+  minuteOfDay = 60 * timeVec$hour + timeVec$min
+  intervalOfWeek = 1 + floor(minuteOfWeek / intervalMinutes)
+  intervalOfDay = 1 + floor(minuteOfDay / intervalMinutes)
+  weekNum = floor(1 + as.numeric(difftime(timeVec,timeVec[1],units="weeks")))
+  
+  predMinuteOfWeek = 24 * 60 * outTimes$wday + 60 * outTimes$hour + outTimes$min
+  predMinuteOfDay = 60 * outTimes$hour + outTimes$min
+  predIntervalOfWeek = 1 + floor(predMinuteOfWeek / intervalMinutes)
+  predIntervalOfDay = 1 + floor(predMinuteOfDay / intervalMinutes)
+  predWeekNum = floor(1 + as.numeric(difftime(outTimes,timeVec[1],units="weeks")))
+  
+  uWeekNums = unique(c(weekNum, predWeekNum))
+  
+  # If we have data for the output times, fill them in
+  nOut = length(outTimes)
+  yOut = rep(NA, nOut)
+  
+  okT = timeVec %in% outTimes
+  if ( any(okT) ) {
+    tmatch = match(timeVec[okT], outTimes)
+    yOut[tmatch] = yVec[okT]
+  }
+  
+  maxInterpLen = 4 * (60/intervalMinutes)  # Number of intervals in 4 hours
+  if (any(is.na(yOut))) {
+    # Interpolate short runs of missing data.
+    isNA = is.na(yOut)
+    runsNA = rle(isNA)
+    doInterp = which( runsNA$values==T & runsNA$lengths <= maxInterpLen )
+    
+    if (length(doInterp) > 0) {
+      yInterp = approx(as.numeric(outTimes[!isNA]),yOut[!isNA],as.numeric(outTimes))[[2]]
+      yOut[isNA] = yInterp[isNA]
+    }
+  }
+  
+  if (any(is.na(yOut))) {
+    # For longer stretches of NA,
+    # fit a model that uses just (TOW or TOD effect) and week effect.
+    # Use the data augmentation trick to 
+    # give each week effect a very week prior of 0.
+    # This should give us at least some non-NA estimate for every time.
+    yAugmented= c(yVec,rep(0,length(uWeekNums)))
+    augmentX = rep(10000,length(uWeekNums))
+    if (timeFactor == "TOW") {
+      fitDf = data.frame(factor(c(intervalOfWeek, augmentX)), factor(c(weekNum, uWeekNums)))
+      predDf = data.frame(factor(c(predIntervalOfWeek,augmentX)), factor(c(predWeekNum,uWeekNums)))
+      names(fitDf) = c("intervalOfWeek", "weekNum")
+      names(predDf) = c("intervalOfWeek", "weekNum")
+    } else {
+      fitDf = data.frame(factor(c(intervalOfDay, augmentX)), factor(c(weekNum, uWeekNums)))
+      predDf = data.frame(factor(c(predIntervalOfDay, augmentX)), factor(c(predWeekNum, uWeekNums)))
+      names(fitDf) = c("intervalOfDay","weekNum")
+      names(predDf) = c("intervalOfDay","weekNum")
+    }
+    
+    amod = lm(yAugmented ~ . + 0, data = fitDf, na.action = na.exclude)
+    ypred = predict(amod,predDf)[1:nOut]  # We just want prediced data; After the nOut entry are the week effects.
+    
+    okNA = is.na(yOut)
+    yOut[okNA] = ypred[okNA]
+  }  
+  
+  if (!is.null(xMat)) {
+    # If we have an explanatory matrix, use it.
+    okX = xTime %in% timeVec  
+    if (any(okX)) {
+      XX = matrix(NA, nrow=length(timeVec), ncol=ncol(xMat))
+      tXmatch = match(xTime[okX], timeVec)
+      XX[tXmatch,] = xMat[okX,]
+      
+      XXaugment = matrix(0, nrow=length(uWeekNums), ncol=ncol(xMat))
+      XX = rbind(XX,XXaugment)
+      fitDf = cbind(fitDf, XX)
+      predDf = cbind(predDf, XX)
+      
+      bmod = lm(yAugmented ~ . + 0, data = fitDf, na.action = na.exclude)
+      ypred = predict(bmod,predDf)[1:nOut]  # We just want prediced data; After the nOut entry are the week effects.
+      
+      okNA = is.na(yOut)
+      yOut[okNA] = ypred[okNA]
+    }
+    
+  }
+  
+  return(yOut)
 }
-#
 
-#
-#
-imputeTimeSeries = function(timeVec,yVec,outStart=NULL,outEnd=NULL,
-	xTime=NULL,xVec=NULL,intervalMinutes=60) {
-	# Fill missing data into a time series
-	# We also keep track of which points were generated by imputation (as opposed to
-	# by interpolation).
-	#
-	# A time series (xTime,xVec) that predicts yVec may be provided. If it is, it will
-	# be used as an additional predictive variable (in addition to time-of-week),
-	# assuming a piecewise-linear relationship between x and y.  
-	
-	niceSeries = putTimeSeriesOnNiceIntervals(timeVec,yVec,
-		outStart=outStart,outEnd=outEnd,intervalMinutes=intervalMinutes)
+
+putTimeSeriesOnNiceIntervals = function(timeVec,yVec,outStart=NULL,outEnd=NULL, intervalMinutes=NULL,  
+                                        verbose=0) {
+  # Takes an input time series recorded at arbitrary time intervals, outputs 
+  # an interpolated time series of mean values at regular intervals.
+  # Output starts at the top of the hour of the first data point (or at an optionally specified
+  # starting location), at specified intervals. 
+  #
+  # We need to handle the case when we have data at either higher or lower frequency
+  # than desired for the output. First deal with the higher-frequency case (take the
+  # mean of all of the data in the interval), then handle the lower-frequency case.
+  #
+  if (verbose > 3) {print("   Starting putTimeSeriesOnNiceIntervals()")}
+  timeIn = getTime(timeVec)
+  numTimeIn = as.numeric(timeIn)
+  
+  if (is.null(outStart)) { 
+    # if no time is specified for the start of the output series, start at the top of
+    # the hour for the first hour that has data.
+    outStartDay = strptime(timeIn[1],format="%Y-%m-%d") 
+    outStart = outStartDay + timeIn[1]$hour*3600 #We have to do this because there are midnight dates like "2015-01-01 PST" with no hour given
+  }
+  numTimeStart = as.numeric(getTime(outStart))
+  
+  if (is.null(outEnd)) {
+    numTimeEnd = as.numeric(tail(timeIn,1))
+  } else {
+    numTimeEnd = as.numeric(getTime(outEnd))
+  }
+  
+  if (is.null(intervalMinutes)) { intervalMinutes = median(diff(as.numeric(timeIn)))/60 }
+  
+  outTimeNum = seq(from=numTimeStart,to=numTimeEnd,by=intervalMinutes*60)
+  
+  intervalsSinceStart = (numTimeIn-numTimeStart)/(intervalMinutes*60)
+  nIntervalsSinceStart = ceiling(intervalsSinceStart)
+  maxIntervals = ceiling((numTimeEnd-numTimeStart)/(intervalMinutes*60))
+  
+  aggregatedDat = aggregate(yVec,by=list(nIntervalsSinceStart),
+                            mean,na.rm=T)
+  
+  aggInterval = aggregatedDat[[1]]
+  okNotTooEarly = aggInterval >= 0
+  okNotTooLate = aggInterval <= maxIntervals
+  
+  outTime = getTime(outTimeNum)
+  nPoints = length(outTime)
+  
+  yOut = rep(NA,nPoints)
+  ok = okNotTooEarly & okNotTooLate
+  yOut[aggInterval[ok]+1] = aggregatedDat[[2]][ok]	
+  yOut = yOut[1:nPoints]
+  
+  
+  Out = NULL
+  Out$time = outTime
+  Out$y = yOut
+  Out$intervalMinutes = intervalMinutes
+  
+  if(verbose > 3) { print( "   Leaving putTimeSeriesOnNiceIntervals()" ) }
+  return(Out)
+}
+
+
+prepareTimeSeries = function(inputDat, tStart=NULL, tEnd=NULL, intervalMinutes=NULL, verbose=0) {
+  if (verbose > 3) { print("  Starting prepareTimeSeries()")}
+  tLoadOrig = inputDat$tLoad
+  yLoadOrig = inputDat$yLoad
+  tPred = inputDat$tPred  # Times at which we ultimately want predictions
+  tTemp = inputDat$tTemp
+  TempF = inputDat$TempF
+  TempC = inputDat$TempC
+  tXorig = inputDat$tX
+  xMatOrig = inputDat$xMat
+  tLoad = NULL
+  yLoad = NULL
+  
+  ####
+  # If tPred isn't provided but load data are provided, use the start and end times from the load data.
+  # 
+  if (!is.null(tPred)) { 
+    tStart = tPred[1]
+    tEnd = tail(tPred,1) 
+  } else {
+    tPred = tLoadOrig # Output times weren't specified, so use the load times
+    tStart = tLoadOrig[1]
+    tEnd = tail(tLoadOrig,1)
+  }
+  if (is.null(intervalMinutes)) { 
+    if (!is.null(tLoadOrig)) {
+      intervalMinutes = median(diff(as.numeric(tLoadOrig)))/60 
+    } else {
+      stop("No intervalMinutes was specified in prepareTimeSeries(), and one can't be determined.")
+    }
+  }  
+  
+  
+  timePoints = getTime(seq(from = as.numeric(tStart), to = as.numeric(tEnd), by = 60*intervalMinutes))
+  
+  ####
+  # If load data are provided, put them on regular intervals. (This may be unnecessary, if they already are!)
+  # Unlike the predictive variables that are handled below, if there
+  # are missing load data we don't interpolate.
+  if (!is.null(yLoadOrig) ) {
+    LoadInfo = putTimeSeriesOnNiceIntervals(
+      tLoadOrig, yLoadOrig, outStart = tStart, outEnd = tEnd,
+      intervalMinutes = intervalMinutes, verbose = verbose
+    )
+    tLoad = LoadInfo$time
+    yLoad = LoadInfo$y
+  } 
+  
+  ####
  
-  	outTime = niceSeries$time
- 	y = niceSeries$y
- 	nPoints = length(y)
-	imputed = rep(F,nPoints)
- 	weightMatrix = NULL
- 	predMatrix = NULL
-	uncert = rep(0,nPoints)
-
-	
-	if (sum(is.na(y)) != 0) {
-		# Fit time-of-week model, or time-of-week + predictive variable if provided, and 
-		# use the predictions to fill in missing data.
-	
-		minuteOfWeek = 24*60*outTime$wday+60*outTime$hour + outTime$min
-		intervalOfWeek = 1+floor(minuteOfWeek/intervalMinutes)
-		ftow = factor(intervalOfWeek)
-	
-		if (!is.null(xTime) & !is.null(xVec)) {
-			# A predictive variable has been provided, so use it in the model
-			# First make sure the times in the sequence match with what we're using.
-			
- 			xNiceSeries = putTimeSeriesOnNiceIntervals(xTime,xVec,
- 				outStart = outStart, outEnd = outEnd, intervalMinutes=intervalMinutes)
- 			
- 			# Use the predictive variable along with time-of-week to fill in missing
- 			# values. 
- 					
-			dframe = data.frame(ftow,xNiceSeries)
- 			imputed = which(is.na(y))			
-			pred1 = fitModel(outTime, y, dframe)
-			
- 			weightMatrix = pred1$weightMatrix
- 			predMatrix = pred1$predMatrix
- 			uncert = pred1$StdErr
- 			y[imputed] = pred1$y[imputed]
- 	
- 		}
-		# If there are still NA, try again with just time of week model
-		if (sum(is.na(y)) != 0) {
-			imputed[is.na(y)] = T
-			
-			pred2 = fitModel(outTime,y,ftow)
-			y[imputed] = pred2$y[imputed]
-			uncert[imputed] = pred2$StdErr[imputed]
-			
-		}	
-
-	}
-
-	Out = NULL
-	Out$time = outTime	
- 	
-	Out$yVec = y
-	Out$imputed = imputed  # True or false, which points are imputed
-	Out$weightMatrix = weightMatrix
-	Out$predMatrix = predMatrix
-	Out$StdErr = uncert
-	return(Out)
-	
+  minuteOfWeek = 24 * 60 * timePoints$wday + 60 * timePoints$hour + timePoints$min
+  intervalOfWeek = 1 + floor(minuteOfWeek / intervalMinutes)
+   
+  if (is.null(tStart)) { tStart = timePoints[1] }
+  if (is.null(tEnd)) { tEnd = tail(timePoints,1) }
+  
+  if (!is.null(TempF)) {
+    if (verbose > 2) { print(paste("  Putting temperature data on nice intervals")) }
+    
+    TempInfo = putTimeSeriesOnNiceIntervals(
+      tTemp, TempF, outStart = NULL, outEnd = NULL,
+      intervalMinutes = intervalMinutes, verbose = verbose
+    )
+    
+    TempF = rep(NA, length(timePoints))
+    oktT = TempInfo$time %in% timePoints
+    if (any(oktT)) {
+      matchtT = match(TempInfo$time[oktT], timePoints)
+      TempF[matchtT] = TempInfo$yVec[oktT]
+    }
+    
+    if ( any(is.na(TempF) ) ) {
+      okNA = is.na(TempF)
+      TempImp = imputeTimeSeries(TempInfo$time, TempInfo$y, xTime=NULL, xMat=NULL, outTimes=timePoints, 
+                                  timeFactor="TOD", intervalMinutes = intervalMinutes, verbose = verbose) 
+ 
+      
+      TempF[okNA] = TempImp[okNA]
+      TempC = (TempF - 32) * 5 / 9
+    }
+  }
+  
+  if (!is.null(xMatOrig)) {
+    if (verbose > 3) {
+      print(paste("Putting additional variables on nice intervals"))
+    }
+    xMat = matrix(NA, nrow=length(timePoints), ncol=ncol(xMatOrig))
+    for (icol in 1:ncol(xMatOrig)) { 
+      xInfo = putTimeSeriesOnNiceIntervals(
+        tXorig, matrix(xMatOrig[,1]), outStart = NULL,
+        outEnd = NULL,intervalMinutes = intervalMinutes,
+        verbose = verbose
+      )
+      if (icol ==1 ) {
+        xNice = matrix(NA, nrow=length(xInfo$y), ncol= ncol(xMatOrig))
+      }
+      xNice[,icol] = xInfo$y
+      txNice = xInfo$time
+    }
+    
+    oktX = txNice %in% timePoints
+    if (any(oktX)) {
+      matchtX = match(txNice[oktX], timePoints)
+      xMat[matchtX,] = xNice[oktX,]
+    }
+    if ( any(is.na(xMat)) ){
+      if ( any(is.na(xMat[,1]))) {
+        # Impute missing values in the first column using a TOW model
+        xCol = imputeTimeSeries(txNice, xNice[,1], outTimes=timePoints, 
+                               timeFactor="TOW", intervalMinutes = intervalMinutes, verbose = verbose) 
+        okNA = which(is.na(xMat[,1]))
+        xMat[okNA,1] = xCol[okNA]
+      }
+      if (ncol(xMat) > 1) {
+        # Impute missing values in subsequent columns by fitting a model using all previous columns, plus TOW.
+        for (icol in 2:ncol(xMat)) {
+          if (any(is.na(xMat[,icol]))) {
+            xCol = imputeTimeSeries(txNice,xNice[,icol], timeFactor="TOW", xTime = txNice, 
+                                    as.matrix(xNice[,1:(icol-1)]),
+                                    intervalMinutes = intervalMinutes, verbose = verbose) 
+            okNA = which(is.na(xMat[,icol]))
+            xMat[okNA,icol] = xCol[okNA]
+          }
+        }
+      }
+    }  
+  }
+  Out = NULL
+  Out$time = timePoints
+  Out$tPred = tPred
+  Out$load = yLoad
+  Out$TempF = TempF
+  Out$TempC = TempC
+  Out$xMat = xMat
+  Out$intervalOfWeek = intervalOfWeek
+  Out$intervalMinutes = intervalMinutes
+  
+  if (verbose > 3) { print("Leaving prepareTimeSeries()")}
+  return(Out)
 }
 
 
 #
+defineTemperatureKnots = function(TempF, Tknots = c(40, 55, 65, 75, 90), verbose=0) {
+  if (verbose > 4) { print("   Starting defineTemperatureKnots()")}
+  Tknots = c(-1000,Tknots,1000)
+  nKnots = length(Tknots)
+  okKnots = rep(T,nKnots)
+  
+  numInBin = 0
+  for (iKnot in 2:nKnots) {
+    # how many temperatures are between Tknots[iKnot-1] and Tknots[iKnot]?
+    numInBin = numInBin + sum((Tknots[iKnot-1] < TempF) & (TempF < Tknots[iKnot]))
+    if (numInBin < 10) { 
+      okKnots[iKnot] = F
+      if (verbose > 4) {
+        print(paste("Bin",iKnot,"doesn't have enough points. Temps",
+                      Tknots[iKnot-1],Tknots[iKnot]))
+      }	 
+    } else {
+      numInBin=0
+    }
+  }
+  Tknots = Tknots[okKnots]
+  if (verbose > 4) { print("Leaving defineTemperatureKnots()")}
+  return(Tknots)
+}
+
 #
-makeTempMatrix = function(tempF,Tknots = c(40, 55, 65, 75, 90),checkBins=T, verbose=0) {
+makeTempMatrix = function(TempF, Tknots, verbose=0) {
 	# Input: vector of temperatures (degrees F)
 	# Output: A matrix that breaks each temperature into bins, suitable for feeding
 	# into a linear regression so as to get a piecewise-continuous model. For example,
-	# with the default bins, a temperature of 58 will yield the following row of the 
+	# with Tknots = c(40, 55, 65, 75, 90), a temperature of 58 will yield the following row of the 
 	# matrix:
 	# 40 15 10 3 0
 	# this means "40 degrees up to 40F, plus 15 degrees to get to 55F, plus 10 degrees
 	# to get to 65 F, plus 3 degrees to get to 68F, plus 0 degrees in the bin above 80F"
-	if (verbose > 2) { print("starting makeTempMatrix") }
-	
-	Tknots = c(-1000,Tknots,1000)
-	nKnots = length(Tknots)
-	okKnots = rep(T,nKnots)
-	
-	if (checkBins) {
-		numInBin = 0
-		for (iKnot in 2:nKnots) {
-			# how many temperatures are between Tknots[iKnot-1] and Tknots[iKnot]?
-			numInBin = numInBin + sum((Tknots[iKnot-1] < tempF) & (tempF < Tknots[iKnot]))
-			if (numInBin < 10) { 
-				okKnots[iKnot] = F
-				if (verbose > 4) {
-					print(paste("Bin",iKnot,"doesn't have enough points. Temps",
-					 Tknots[iKnot-1],Tknots[iKnot]))
-				}	 
-			} else {
-				numInBin=0
-			}
-		}
-	}
-	Tknots = Tknots[okKnots]
+	if (verbose > 2) { print("  Starting makeTempMatrix()") }
 	
 	Tbinwidth = diff(Tknots) 
-	
 	nKnots = length(Tknots)
 
 	nCol = nKnots-1
-	outMat = matrix(0,nrow=length(tempF),ncol=nCol)
+	outMat = matrix(0,nrow=length(TempF),ncol=nCol)
 
-	outMat[,1] = ifelse(tempF < Tknots[2], tempF, Tknots[2])
+	outMat[,1] = ifelse(TempF < Tknots[2], TempF, Tknots[2])
 	if (nCol > 1) {
 		for (iKnot in 2:nCol) {
-			outMat[,iKnot] =  ifelse(tempF > Tknots[iKnot], tempF-Tknots[iKnot], 0)
+			outMat[,iKnot] =  ifelse(TempF > Tknots[iKnot], TempF-Tknots[iKnot], 0)
 			outMat[,iKnot] = ifelse(outMat[,iKnot] > Tbinwidth[iKnot], 
 				Tbinwidth[iKnot], outMat[,iKnot])
 		}	
@@ -298,35 +529,61 @@ makeTempMatrix = function(tempF,Tknots = c(40, 55, 65, 75, 90),checkBins=T, verb
 	Out$Tknots = Tknots
 	Out$Tmat = outMat
 	
-	if (verbose > 2) { print("leaving makeTempMatrix") }
+	if (verbose > 2) { print("  Leaving makeTempMatrix()") }
 
 	return(Out)	
 }
 
-##
-###########################
-
-fillGaps = function(xvec,minGap=3) {
+fillGaps = function(xvec,minGap=3.1, verbose=0) {
 	# input xvec is a vector of T and F, representing whether time period is an
-	# occupied mode or not, e.g. c(F,F,F,F,F,T,F,F,T,T,T,F,T,T,F,F,F,F,F)
-	# If there are a few F sprinkled in among T, we want to replace them with T: they
-	# are probably occupied periods that the algorithm didn't flag as such.
-	# minGap specifies the minimum gap in NUMBER OF INTERVALS. E.g. minGap=3 could
-	# mean 3 hours (if data are hourly) or 45 minutes (for 15-minute data)
-	
+	# occupied mode or not, e.g. c(F,F,F,T,F,F,T,T,T,F,T,T,F,F,F,F,F)
+	# If there are a few F sprinkled in among T, replace them with T: 
+	if (verbose > 4) { print("    Starting fillGaps()")}
 	rl = rle(xvec)  # run lengths
 	y = rep(rl$lengths, rl$lengths)
-	y[xvec==T] = 0
+	y[xvec==T] = F
 	z = rep(F,length(xvec))
 	z[y <= minGap] = T
+	if (verbose > 4) { print("    Leaving fillGaps()")}
 	return(z)
-	
 }	
 
+findTimeCategories = function(dataStruct, startupHours = 2) {
+  # Find "occupied" and "unoccupied" periods of the week; and
+  # split the occupied period into "startup" and "rest of day"
+  occMat = findOccUnocc(dataStruct$intervalOfWeek,dataStruct$load,dataStruct$temp,intervalMinutes,verbose=1) 
+  
+  okOcc = occMat[,2]
+  intervalMinutes = dataStruct$intervalMinutes	
+  
+  # for each time interval in occMat, what time of day does it represent?
+  hourOfDayLookup = rep(seq(from=0, to=24, by=intervalMinutes/60), 7)
+  hourOfDay = hourOfDayLookup[occMat[,1]] 
+  
+  okAfter4 = hourOfDay > 4 # after 4 a.m. 	
+  
+  # Define "startup" as: any 'occupied' period within 4 hours of the start of the day,
+  # where the start of the day is defined as the first occupied period of the day after 4 a.m. 
+  okStartup = rep(0,nrow(occMat))
+  for (iDay in 0:6) {
+    okDay = (iDay*24*(60/intervalMinutes) <= occMat[,1]) &
+      (occMat[,1] < (iDay+1)*24*(60/intervalMinutes))
+    
+    todayStartTime = min(hourOfDay[okDay & okAfter4 & okOcc])
+    okStartup[okDay & okOcc & (todayStartTime <= hourOfDay) & 
+                (hourOfDay < (todayStartTime + startupHours))] = 1
+  }
+  okUnocc = !okOcc
+  okOccLater = okOcc & !okStartup
+  
+  timeCategoryMat = cbind(okUnocc,okStartup,okOccLater)
+  
+  return(timeCategoryMat)
+}
 
 
-findOccUnocc = function(intervalOfWeek,loadVec,TempF,verbose=1) {
-	if (verbose > 4) { print("starting findOccUnocc()") }
+findOccUnocc = function(intervalOfWeek, loadVec, TempF, intervalMinutes,verbose=1) {
+	if (verbose > 4) { print("    Starting findOccUnocc()") }
 	# Figure out which times of week a building is in one of two modes
 	#  (called 'occupied' or 'unoccupied'). This is NOT based on whether 
 	# occupants are present: rather, in "occupied mode" the building is load is more
@@ -339,8 +596,6 @@ findOccUnocc = function(intervalOfWeek,loadVec,TempF,verbose=1) {
 	# of load on outdoor temperature: times of week that the regression usually
 	# underpredicts the load will be called 'occupied', the rest are 'unoccupied'
 	# This is not foolproof but usually works well. 
-	#	
-	
 	
 	TempF50 = TempF-50
 	TempF50[TempF > 50] = 0
@@ -352,7 +607,7 @@ findOccUnocc = function(intervalOfWeek,loadVec,TempF,verbose=1) {
 	TempFbetween[TempF > 62] = 0
 	
 	if (verbose > 4) {
-		print("fitting temperature regression")
+		print("    Fitting temperature regression")
 	}
 	amod = lm(loadVec ~ TempF50 + TempFbetween + TempF62,na.action=na.exclude)
 	
@@ -362,357 +617,304 @@ findOccUnocc = function(intervalOfWeek,loadVec,TempF,verbose=1) {
 		# if the regression underpredicts the load more than 65% of the time
 		# then assume it's an occupied period
 		if ( sum(residuals(amod)[okTOW]>0,na.rm=T) > 0.65*sum(okTOW) ) {
-			okocc[itow]=1
+			okocc[itow]=T
 		}
 	}
 	firstMat = cbind(uTOW,okocc)
 	
-	# if there are a short (or not so short) intervals we tag as "unoccupied" but 
-	# they're bounded on both
+	# if there are short intervals that are tagged as "unoccupied" but they're bounded on both
 	# sides by "occupied" periods, re-label them as "occupied."
 	outMat = firstMat
-	outMat[,2] = fillGaps(outMat[,2],minGap=8)
+	minGap = 3*(60/intervalMinutes) + 0.1  # Fill gaps of 3.1 hours or less.
+	outMat[,2] = fillGaps(outMat[,2],minGap = minGap )
 	
-	if (verbose > 4) { print("leaving findOccUnocc()") }
+	if (verbose > 4) { print("    Leaving findOccUnocc()") }
 	return(outMat)
 }
 
 
 
-################
-createDataStructure = function(tLoad,yLoad,tTemp=NULL,yTemp=NULL,
-	tPredictors=NULL,xPredictors=NULL,xPredThresh=0.2, verbose=0) {
-	# Create a data structure containing time, load, temperature, and predictive variables
-	# The load data are king: put the temperature data and other predictors on the
-	# same time intervals as the load data
-	#
-	# * Impute temperature and other predictive variables if necessary.
-	# * Create temperature matrices to fit a piecewise-linear dependence on temperature
-	# 	- fit separate temperature dependence for occupied and unoccupied modes, and
-	#		startup period
-	# *	Optionally, create separate matrices of other predictive variables to allow	
-	#		different behavior when the variable is above vs below a specified	
-	#		percentile (specified by xPredThresh). For instance, if a predictor
-	#		variable is the number of active WiFi connections, you could allow a 
-	#		different relationship between load and number of connections when the
-	#		number is below the 20th percentile than when it is above the 20th percentile.
-	#		
-	if (verbose > 2) { print("starting createDataStructure") }
-	timeCategories = NULL
-	tempInfo = NULL
-	
-	tStart = tLoad[1]
-	tEnd = tail(tLoad,1)
-	nPoints = length(yLoad)
-	intervalMinutes = round((as.numeric(tEnd) - as.numeric(tStart))/(60*nPoints))
-	
-	# load data should already be on nice time intervals, but just in case:
-	LoadInfo = imputeTimeSeries(tLoad,yLoad,outStart=tStart,outEnd=tEnd,
-			intervalMinutes=intervalMinutes)		
-	tLoad = LoadInfo$time
-	yLoad = LoadInfo$y
-	nPoints = length(yLoad)
+defineModelVariables = function(inputDat, xPredThresh = 0.2, verbose = 0) {
+  # Create a data structure containing time, load, temperature, and predictive variables
+  #
+  # * Impute temperature and other predictive variables if necessary.
+  # * Create temperature matrices to fit a piecewise-linear dependence on temperature
+  # 	- fit separate temperature dependence for occupied and unoccupied modes, and
+  #		startup period
+  # *	Optionally, create separate matrices of other predictive variables to allow
+  #		different behavior when the variable is above vs below a specified
+  #		percentile (specified by xPredThresh). For instance, if a predictor
+  #		variable is the number of active WiFi connections, you could allow a
+  #		different relationship between load and number of connections when the
+  #		number is below the 20th percentile than when it is above the 20th percentile.
+  #
+  if (verbose > 3) { print("   Starting defineModelVariables()") }
+   
+  timeCategories = NULL
+  tempInfo = NULL
+  
+  nPoints = length(inputDat$fit$time)
+  nPredPoints = length(inputDat$pred$tPred)
 
-	minuteOfWeek = 24*60*tLoad$wday+60*tLoad$hour + tLoad$min
-	intervalOfWeek = 1+floor(minuteOfWeek/intervalMinutes)
-	ftow = factor(intervalOfWeek)
-	
+  fitDat = inputDat$fit
+  predDat = inputDat$pred
+  
+  intervalMinutes = fitDat$intervalMinutes
+  
+  if (!is.null(fitDat$TempF)) {
+ 
+    # Separate times of the week into "unoccupied mode", "startup mode",
+    # and "occupied mode." Modes are based on when the building is more or
+    # less sensitive to outdoor air temperature, not on when the building is
+    # actually occupied. (More sensitive to outdoor temperature presumably means
+    # the building is heated or cooled within a tighter band).
+    timeCatDefinitions = determineTimeCategories(fitDat$time, fitDat$load, intervalMinutes,
+                          fitDat$TempF,  verbose = verbose)
+    timeCategories = setTimeCategories(fitDat$time, timeCatDefinitions, intervalMinutes, verbose=verbose)
+    timeCategoriesPred = setTimeCategories(predDat$tPred, timeCatDefinitions, intervalMinutes, verbose=verbose)
+    
+    tempMatrices = NULL
+    predTempMatrices = NULL
+    Tknots = NULL
+    for (icol in 1:ncol(timeCategories)) {
+      Tknots[[icol]] = defineTemperatureKnots(fitDat$TempF[timeCategories[,icol]], Tknots = c(45, 55, 65, 80))
+      tm =  makeTempMatrix(fitDat$TempF[timeCategories[,icol]], Tknots[[icol]])
+      TmatCatOnly = tm$Tmat
+      # TmatCatOnly is the temperature matrix for just those times that are in
+      # the time category. But what we want is a matrix that has one row per
+      # data point in the entire dataset, but is filled with zeroes except for
+      # those times. So build that now.
+      TmatCat = matrix(0,nrow = nPoints,ncol = ncol(TmatCatOnly))
+      TmatCat[timeCategories[,icol],] = TmatCatOnly
+      tempMatrices[[icol]] = TmatCat
+      
+      if (!is.null(predDat$TempF)) {
+        ptm = makeTempMatrix(predDat$TempF[timeCategoriesPred[,icol]], Tknots[[icol]])
+        pTmatCatOnly = ptm$Tmat
+        predTmatCat = matrix(0,nrow = nPredPoints,ncol = ncol(TmatCatOnly))
+        predTmatCat[timeCategories[,icol],] = pTmatCatOnly
+        predTempMatrices[[icol]] = TmatCat
+      }
+    }
+  }
+  
+  if (!is.null(fitDat$xMat)) {
+    Xfit = as.matrix(fitDat$xMat)
+    Xpred = as.matrix(predDat$xMat)
 
-	if (sum(LoadInfo$imputed) > 0.05*length(LoadInfo$yVec)) {
-		stop("Stopping: would have to impute more than 5% of load data.")
-	}
-	
-	if (!is.null(yTemp)) {
-		# Use imputeTimeSeries for each series of predictors, 
-		#	in case there are missing data
-		
-		TempInfo = imputeTimeSeries(tTemp,yTemp,outStart=tStart,outEnd=tEnd,
-			intervalMinutes=intervalMinutes)
-			
-		# Split times of the week into "unoccupied mode", "startup mode",
-		# and "occupied mode." Modes are based on when the building is more or
-		# less sensitive to outdoor air temperature, not on when the building is
-		# actually occupied. (More sensitive to outdoor temperature presumably means
-		# the building is heated or cooled within a tighter band). 
-		timeCategories = findTimeCategories(tLoad,yLoad,
-			TempInfo$yVec,intervalMinutes,verbose=verbose)
-		
-		tempMatrices = NULL
-		Tknots = NULL
-		for (icol in 1:ncol(timeCategories)) {
-			tm =  makeTempMatrix(TempInfo$yVec[timeCategories[,icol]==1])
-			Tknots[[icol]] = tm$Tknots
-			TmatCatOnly = tm$Tmat
-			# TmatCatOnly is the temperature matrix for just those times that are in 
-			# the time category. But what we want is a matrix that has one row per
-			# data point in the entire dataset, but is filled with zeroes except for 
-			# those times. So build that now.
-			TmatCat = matrix(0,nrow=nPoints,ncol = ncol(TmatCatOnly))
-			TmatCat[timeCategories[,icol]==1,] = TmatCatOnly
-			tempMatrices[[icol]] = TmatCat
-		}
+    xMatrices = NULL
+    predXmatrices = NULL
+    
+    xMatrices[[1]] = matrix(0,nrow=nPoints,ncol=ncol(Xfit))
+    xMatrices[[2]] = matrix(0,nrow=nPoints,ncol=ncol(Xfit))
+    predXmatrices[[1]] = matrix(0, nrow=nPredPoints,ncol=ncol(Xfit)) 
+    predXmatrices[[2]] = matrix(0, nrow=nPredPoints,ncol=ncol(Xfit)) 
+    
 
-	}
-	
-	if (!is.null(xPredictors)) {
-		xPredictors = as.matrix(xPredictors)
-		predMat = matrix(NA,nrow=nPoints,ncol=ncol(xPredictors))
-		pImputed = matrix(NA,nrow=nPoints,ncol=ncol(xPredictors))
-	
-		if (ncol(xPredictors) == 1) {
-				pInfo = imputeTimeSeries(tPredictors, xPredictors[,1],outStart=tStart,
-					outEnd = tEnd,intervalMinutes=intervalMinutes)
-				predMat[,1] = pInfo$yVec
-				pImputed[,1] = pInfo$imputed
-			} else {
-				# if two or more predictive variables are provided, impute 
-				# missing values of the first 
-				# one using the second, and then all of the others using the first one 
-				# (including its imputed values). This makes sense if the first one 
-				# is the "best" one and the second one is second-best.
-				# Doing a joint prediction with all of them would be best, but is much 
-				# more complicated, especially if they all have missing values at 
-				# different places.
-				pInfo = imputeTimeSeries(tPredictors, xPredictors[,1],outStart=tStart,
-					outEnd = tEnd, tPredictors, xPredictors[,2])
-				predMat[,1] = pInfo$yVec
-				pImputed[,1] = pInfo$imputed	
-				for (iCol in 2:nCol) {	
-					pInfo2 = imputeTimeSeries(tPredictors, xPredictors[,iCol],outStart=tStart,
-						outEnd = tEnd, xtime=pInfo$time, xVec=predMat[,1],
-						intervalMinutes=intervalMinutes)
-					predMat[,iCol] = pInfo2$yVec
-					pImputed[,1] = pInfo2$imputed	
-			}		
-		}
-	
-		# In addition to providing predictive variables ("predictors")
-		# in the form of a matrix, we provide two additional matrices: 
-		# one that contains the predictive variables where they are below a given quantile
-		# but zero elsewhere, and one that contains the predictive variables where they
-		# exceed a given quantile but are zero elsewhere. If no quantile is provided,
-		# we put the full matrix of predictive variables into both slots. 
-		#
-		predictorMatrices = NULL
-		predictorMatrices[[1]] = predMat
-		predictorMatrices[[2]] = predMat
-		if (xPredThresh < 0 & verbose > 0) { print("warning: xPredThresh < 0") }
-		if (xPredThresh > 1 & verbose > 0) { print("warning: xPredThresh > 1") }
-		
-		if (!is.null(xPredThresh) & xPredThresh >= 0 & xPredThresh <= 1) {	
-			for (icol in 1:ncol(predMat)) {
-				thresh = quantile(predMat[,icol],p=xPredThresh)
-				predictorMatrices[[1]][predMat[,icol] > thresh,icol] = 0
-				predictorMatrices[[2]][predMat[,icol] <= thresh,icol] = 0
-			}
-		}
-	}
-	Out = NULL
-	
-	Out$time = tLoad
-	Out$timeCategories = timeCategories
-	Out$load = yLoad
-	Out$temp = TempInfo$yVec
-	Out$Tknots = Tknots
-	Out$tempMatrices = tempMatrices
-	Out$tempImputed = TempInfo$imputed
-	Out$predictors = predMat
-	Out$predictorMatrices = predictorMatrices
-	Out$pImputed = pImputed
-	Out$intervalOfWeek = intervalOfWeek
-	Out$intervalMinutes = intervalMinutes
+    for (icol in 1:ncol(Xfit)) {
+      knotpoint = quantile(Xfit[,icol], xPredThresh )
+      xMatrices[[1]][,icol] = ifelse(Xfit[,icol] > knotpoint, knotpoint, Xfit[,icol])
+      xMatrices[[2]][,icol] = ifelse(Xfit[,icol] <= knotpoint, Xfit[,icol]-knotpoint,0)
+      
+      predXmatrices[[1]][,icol] = ifelse(Xpred[,icol] > knotpoint, knotpoint, Xpred[,icol])
+      predXmatrices[[2]][,icol] = ifelse(Xpred[,icol] <= knotpoint, Xpred[,icol]-knotpoint,0)
+    }
+  }  
 
-	if (verbose > 2) { print("leaving createDataStructure") }
-	
-	return(Out)
-		
+  Out = NULL
+  Out$fit = NULL
+  Out$fit$intervalOfWeek = fitDat$intervalOfWeek
+  Out$fit$tempMatrices = tempMatrices
+  Out$fit$xMat = Xfit
+  Out$fit$xMatrices = xMatrices
+
+  Out$pred = NULL
+  Out$pred$intervalOfWeek = predDat$intervalOfWeek
+  Out$pred$tempMatrices = predTempMatrices
+  Out$pred$xMat = Xpred
+  Out$pred$xMatrices = predXmatrices
+
+
+  if (verbose > 2) {
+    print("   Leaving DefineModelVariables()")
+  }
+  return(Out)
 }
 
-###
-####################
-findTimeCategories = function(tLoad,load,temp=NULL,intervalMinutes,intervalOfWeek=NULL,
-	startMinutes=120,verbose=0) {
-	# Find periods of the week that the building is in "occupied mode" and "unoccupied mode" 
-	# and split the occupied mode into "startup" and "rest of day"
-	# Note that these modes do NOT depend on actual occupancy: they are based on when data
-	# suggest the building is heated or air conditioned to a greater or lesser degree.
-	if (verbose > 2) { print("starting findTimeCategories") }
-	
-	nPoints = length(load)
-	if (is.null(temp)) {
-		# if temperature data aren't provided, we can't determine different operating
-		# modes, so just put everything into "occupied non-startup."
-		okOccLater = rep(1,length(load))
-		okUnocc = rep(0,length(load))
-		okStartup = rep(0,length(load))
-		timeCategoryMat = cbind(okUnocc,okStartup,okOccLater)
-	} else {
-	
-		# if intervalOfWeek isn't provided, calculate it:
-		minuteOfWeek = 24*60*tLoad$wday+60*tLoad$hour + tLoad$min
-		intervalOfWeek = 1+floor(minuteOfWeek/intervalMinutes)
-	
-		occMat = findOccUnocc(intervalOfWeek,load,temp,
-			verbose=1) 
-		occIntervals = occMat[which(occMat[,2]==1),1] 
-		okOcc = intervalOfWeek %in% occIntervals
-	
-		timeOfDay = tLoad$hour + tLoad$min/60 
-		okAfter4 = timeOfDay > 4 # after 4 a.m. 	
-	
-		# Define "startup" as: any 'occupied' period within startMinutes of the start of the day,
-		# where the start of the day is defined as the first roccupied period of the day 
-		# after 4 a.m. 
-				
-		okStartup = rep(0,nPoints)
-		for (iDay in 0:6) {
-			# run through days of the week
-			okDay = tLoad$wday == iDay
-			
-			if (sum(okOcc & okDay) > 1) {
-				# At least some times on this day of the week, the building is in 
-				# 'occupied' mode.
-				
-				# For all examples of this day of the week in the dataset, find the start time.
-				ok =  okDay & okAfter4 & okOcc	
-				startTimes = aggregate(timeOfDay[ok],by=list(tLoad$yday[ok]),min,na.rm=T)$x
-			
-				thisDayStartTime = quantile(startTimes,p=0.2)[1]
-				okStartup[okDay & okOcc & (thisDayStartTime <= timeOfDay) & 
-					(timeOfDay < (thisDayStartTime+4))] = 1
-			} 
-		}
-		okUnocc = !okOcc
-		okOccLater = okOcc & !okStartup
-	
-	}
-	timeCategoryMat = cbind(okUnocc,okStartup,okOccLater)
-	
-	if (verbose > 2) { print("leaving findTimeCategories") }
-		
+
+determineTimeCategories = function(tLoad, load, intervalMinutes, temp = NULL,  startMinutes =
+                                     121, verbose = 0) {
+  if (verbose > 2) {
+    print("  Starting determineTimeCategories")
+  }
+  
+  minuteOfWeek = 24 * 60 * tLoad$wday + 60 * tLoad$hour + tLoad$min
+  intervalOfWeek = 1 + floor(minuteOfWeek / intervalMinutes)
+  uTOW = sort(unique(intervalOfWeek))
+  nInterval = length(uTOW)
+  if (is.null(temp)) {
+    # We can't determine temperature dependence, so just put everything into "unoccupied mode"
+    occ = rep(F,nInterval)
+    nonOcc = rep(T,nInterval)
+    Out = cbind(uTOW,nonOcc,occ,occ,occ)
+  } else {
+    occMat = findOccUnocc(intervalOfWeek,load,temp,intervalMinutes,
+                          verbose = 1)
+    
+    
+    occIntervals = occMat[occMat[,2]==1,1]
+    okOcc = intervalOfWeek %in% occIntervals
+    
+    # Now determine which times of the week are in the "startup period" each day
+    # Define "startup" as: any 'occupied' period within startMinutes of the start of the day,
+    # where the start of the day is defined as the first period of the day
+    # after 4 a.m. that the building is in "occupied mode."
+    okStart = rep(F,length(uTOW))
+    
+    timeOfDay = tLoad$hour + tLoad$min / 60
+    okAfter4 = timeOfDay > 4 # after 4 a.m.
+    
+    startIntervals = NULL
+    for (iDay in 0:6) {
+      # run through days of the week
+      okDay = tLoad$wday == iDay
+      
+      if (sum(okOcc[okDay] ) > 1) {
+        # At least some times on this day of the week, the building is in
+        # 'occupied' mode.
+        
+        # For all examples of this day of the week in the dataset, find the start time. Take 20th percentile to
+        # summarize the start time for this day of the week.
+        ok =  okDay & okAfter4 & okOcc
+        startTimes = aggregate(timeOfDay[ok],by = list(tLoad$yday[ok]),min,na.rm =
+                                 T)$x
+        thisDayStartTime = quantile(startTimes,p = 0.2)[1]
+        
+        minOfWeekStart = iDay * 24 * 60 + thisDayStartTime * 60
+        minOfWeekEnd = minOfWeekStart + startMinutes
+        
+        intervalOfWeekStart = 1 + floor(minOfWeekStart / intervalMinutes)
+        intervalOfWeekEnd = 1 + floor(minOfWeekEnd / intervalMinutes)
+        startIntervals = c(startIntervals, intervalOfWeekStart:intervalOfWeekEnd)
+      }
+    }
+    
+    occ = rep(F,nInterval)
+    occ[uTOW %in% occIntervals] = T
+    nonOcc = !occ
+    
+    occStart = rep(F,nInterval)
+    occStart[uTOW %in% startIntervals] = T
+    
+    occNonStart = occMat[,2] & !occStart
+    
+    Out = cbind(uTOW,nonOcc,occ,occStart,occNonStart)
+  }
+  if (verbose > 2) { print("  Leaving determineTimeCategories()")}
+  return(Out)
+}
+
+setTimeCategories = function(tLoad, timeCategoryDefinitions, intervalMinutes, verbose=0) {
+  minuteOfWeek = 24*60*tLoad$wday+60*tLoad$hour + tLoad$min
+  intervalOfWeek = 1+floor(minuteOfWeek/intervalMinutes)
+  timeCategoryMat = matrix(F,nrow=length(tLoad),ncol=3)
+  timeCategoryMat[,1] = intervalOfWeek %in% timeCategoryDefinitions[timeCategoryDefinitions[,"nonOcc"]==1,"uTOW"]
+  timeCategoryMat[,2] = intervalOfWeek %in% timeCategoryDefinitions[timeCategoryDefinitions[,"occStart"]==1,"uTOW"]
+  timeCategoryMat[,3] = intervalOfWeek %in% timeCategoryDefinitions[timeCategoryDefinitions[,"occNonStart"]==1,"uTOW"]
 	return(timeCategoryMat)
-
 }
 
-prepareDataFrame = function(dataStruct,useIntervalOfWeek=T,useTemp=T,useOther=T) {
+prepareDataFrame = function(dataStruct, verbose=0) {
 	# Put together a single data frame, for use in fitting the model, based on
 	# data from the data structure. 
 	#
 	# This can probably be done a lot simpler by using cbind to put pieces together,
-
-	if (useIntervalOfWeek & useTemp & useOther) {
-		predFrame = data.frame(as.factor(
-			dataStruct$intervalOfWeek),
-			dataStruct$tempMatrices[[1]],
-			dataStruct$tempMatrices[[2]],
-			dataStruct$tempMatrices[[3]],
-			dataStruct$predictorMatrices[[1]],
-			dataStruct$predictorMatrices[[2]])
-		return(predFrame)
-	}		
-	if (useIntervalOfWeek & useTemp & !useOther) {
-		predFrame = data.frame(as.factor(
-			dataStruct$intervalOfWeek),
-			dataStruct$tempMatrices[[1]],
-			dataStruct$tempMatrices[[2]],
-			dataStruct$tempMatrices[[3]])
-		return(predFrame)
-	}
-	if (useIntervalOfWeek & !useTemp & useOther) {
-		predFrame = data.frame(as.factor(
-			dataStruct$intervalOfWeek),
-			dataStruct$predictorMatrices[[1]],
-			dataStruct$predictorMatrices[[2]])		
-		return(predFrame)
-	}	
-	if (useIntervalOfWeek & !useTemp & !useOther) {
-		predFrame = data.frame(as.factor(
-			dataStruct$intervalOfWeek))
-	}
+  if (verbose > 1) print(" Starting prepareDataFrame()")
+  predFrame = data.frame(as.factor(dataStruct$intervalOfWeek))
+  names(predFrame) = "intervalOfWeek"
+  if (!is.null(dataStruct$tempMatrices)) {
+    for (i in 1:length(dataStruct$tempMatrices)) {
+      TM = dataStruct$tempMatrices[[i]]
+      dimnames(TM)[[2]] = as.list(paste("TempBin",i,".",1:ncol(TM),sep=""))
+      predFrame = cbind(predFrame, TM)
+    }
+  }
+  if (!is.null(dataStruct$xMat)) {
+    for (i in 1:length(dataStruct$xMatrices)) {
+      XM = dataStruct$xMatrices[[i]]
+      dimnames(XM)[[2]] = as.list(paste("X",i,".",1:ncol(XM),sep=""))
+      predFrame = cbind(predFrame, XM)
+    } 
+  }
+  if (verbose > 1) print(" Leaving prepareDataFrame()")
+  return(predFrame)
 }
 
-
-####################
+######### XXXPNP
+fitMultipleModels = function(dataStructure) {
+  timeVec = getTime(timeVec)
+  timeNum = as.numeric(timeVec)
+  
+  # calculate total length of dataset, in days
+  totalIntervalLength = (tail(timeNum,1) - timeNum[1]) / (24 * 3600)
+  nPoints = length(yVec)
+  
+  nFits = 1 + floor(totalIntervalLength / timescaleDays)
+  individualLength = totalIntervalLength / nFits
+  timestep = individualLength * 24 * 60 * 60 # timestep in seconds
+  
+  predMatrix = matrix(0,nrow = nPoints,ncol = nFits)
+  weightMatrix = matrix(0,nrow = nPoints,ncol = nFits)
+  SEmatrix = matrix(0,nrow = nPoints,ncol = nFits)
+  
+  for (i in 1:nFits) {
+    if (verbose > 3) {
+      print(paste("Doing fit number",i,"of",nFits))
+    }
+    centralTime = getTime(timeNum[1] + (i - 1) * timestep)
+    tDiff = as.numeric(difftime(timeVec,centralTime,units = "days"))
+    weightvec = 14 ^ 2 / (14 ^ 2 + tDiff ^ 2)
+    amod = lm(yVec ~ . + 0,data = predFrame, na.action = na.exclude,
+              weight = weightvec)
+    SE <- sqrt(sum(residuals(amod) ^ 2, na.rm = T) / amod$df.residual)
+    
+    weightMatrix[,i] = weightvec
+    predMatrix[,i] = predict(amod,predFrame)
+    SEmatrix[,i] = SE
+  }
+  
+  yPred = apply(predMatrix * weightMatrix,1,sum) / apply(weightMatrix,1,sum)
+  StdErr = apply(SEmatrix * weightMatrix,1,sum) / apply(weightMatrix,1,sum)
+}
 
 #
-fitModel = function(timeVec, yVec, predFrame, timescaleDays = 14, verbose=0) {
-	# Fit a linear model to predict yVec as a linear combination of predFrame.
+fitModel = function(yVec, fitFrame, weightVec = NULL, predFrame=NULL, verbose=0) {
+	# Fit a linear model to predict yVec as a linear combination of columns of predFrame (which may include factors).
 	# Inputs:
 	#  timeVec: one timestamp per data point (may be numeric, string in Y-m-d H:M format,
 	#		or a POSIX time). This is used to make final predictions that adapt with time
 	#		if the behavior of the system changes with time.
-	#  yVec: the variable to be predicted. Numeric. May contain NA.
+	#  yVec: the variable to be fit. Numeric vector. May contain NA.
 	#  predFrame: A data frame or vector of predictive variables. May contain "time-of-week"
 	#		variables as a column of type "factor." 
 	if (verbose > 2) { print("starting fitModel") }
-
-
-	timeVec = getTime(timeVec)
-	timeNum = as.numeric(timeVec)
-		
-	# calculate total length of dataset, in days
-	totalIntervalLength = (tail(timeNum,1)-timeNum[1])/(24*3600) 
-	nPoints = length(yVec)
-	
-	nFits = 1 + floor(totalIntervalLength/timescaleDays)
-	individualLength = totalIntervalLength/nFits
-	timestep = individualLength * 24*60*60 # timestep in seconds
-	
-	predMatrix = matrix(0,nrow=nPoints,ncol=nFits)
-	weightMatrix = matrix(0,nrow=nPoints,ncol=nFits)
-	SEmatrix = matrix(0,nrow=nPoints,ncol=nFits)
-	
-	for (i in 1:nFits) {
-		centralTime = getTime(timeNum[1] + (i-1)*timestep)
-		tDiff = as.numeric(difftime(timeVec,centralTime,units="days"))
-		weightvec = 14^2/(14^2 + tDiff^2)
-		amod = lm(yVec ~ .+0,data=predFrame, na.action=na.exclude,	
-			weight = weightvec)
-		SE <- sqrt( sum( residuals(amod)^2, na.rm=T ) / amod$df.residual )
-
-		weightMatrix[,i] = weightvec
-		predMatrix[,i] = predict(amod,predFrame)
-		SEmatrix[,i] = SE
-
-	}
-	
-	yPred = apply(predMatrix*weightMatrix,1,sum)/apply(weightMatrix,1,sum)
-	StdErr = apply(SEmatrix*weightMatrix,1,sum)/apply(weightMatrix,1,sum) 
-
-	
+  if (is.null(predFrame)) { predFrame = fitFrame }
+  if (is.null(weightVec)) { weightVec = rep(1,length(yVec))}
+  amod = lm(yVec ~ .+0,data=fitFrame, weights=weightVec, na.action=na.exclude)
+  
+  modelPredictions = predict(amod, predFrame, se.fit=T)
+  
+  SE <- sqrt( sum( residuals(amod)^2, na.rm=T ) / amod$df.residual )
+ 	
+  
 	Out = NULL
-	Out$yPred = yPred
-	Out$StdErr = StdErr
-	Out$predMatrix = predMatrix
-	Out$weightMatrix = weightMatrix
-	Out$SEmatrix = SEmatrix
+	Out$yFit = amod$fitted.values
+	Out$yPred = modelPredictions$fit
+	Out$SE = SE
+	Out$SEfit = modelPredictions$se.fit
+	Out$predMatrix = predFrame
 	return(Out)
 	if (verbose > 2) { print("leaving fitModel") }
-	
-}
-
-
-trimDat = function(start, timevec, yvec, end=NULL, nDays = NULL) {
-	# given a time vector and an associated data vector, trim them both to 
-	# a specified time interval. Start time must be given explicitly.
-	# End time can be specified as a number of days since the start, or as an
-	# end time (in any format understood by getTime).
-	numStart = as.numeric(getTime(start))
-	numEnd = 1e12
-	ytime = getTime(timevec)
-	if (
-		!is.null(end)) { numEnd = as.numeric(getTime(end)) 
-	} else {
-		if (!is.null(nDays)) {
-			numEnd = as.numeric(numStart) + 24*3600*nDays	
-		} 
-	}
-	ok = numStart <= ytime & ytime <= numEnd
-	Out = NULL
-	Out$yvec = yvec[ok]
-	Out$time = getTime(ytime[ok])
-	return(Out)
-	
 }
 
 
@@ -774,51 +976,168 @@ GoodnessOfFit = function(time1, loadVec, time2, baselinePred, verbose=1) {
 	return(Out)
 }
 
-#
-# Here's the call to the main program in baseline.R; in order to use the same command line
-# call that we use in baseline.r (so as to maintain backwards compatibility) we need to
-# rewrite our main() so we can call it this way, 
-# (and extend by adding additional optional variables).
-# main(inLoadFile=inLoadFile,
-#	timeStampFile=timeStampFile,
-#	inTemperatureFile=inTemperatureFile,
-#	inPredTemperatureFile=inPredTemperatureFile,
-#	outBaselineFile=outBaselineFile,
-#	outGoodnessOfFitFile=outGoodnessOfFitFile,
-#	intervalMinutes=intervalMinutes,
-#	timescaleDays=timescaleDays, 
-#	fahrenheit = fahrenheit,
-#	verbose=verbosity)
+prepareAndFitModel = function(readyDat, weightVec = null, xPredThresh = xPredThresh, verbose=verbose) {
+  if (verbose > 1) { print(" Starting prepareAndFitModel()")}
+  
+  # We do defineModelVariables inside prepareAndFitModel so that it is run again for each set of weight
+  # vectors. This would allow weights to be used in determining occupied/unoccupied periods rather than
+  # just doing that once.
+  # 
+  dataStruct = defineModelVariables(readyDat, xPredThresh = xPredThresh, verbose =
+                                    verbose)
+  if (verbose > 2) { print(" Preparing data frame for fitting the model")}
+  fitDf = prepareDataFrame(dataStruct$fit)
 
+  if (verbose > 2) { print("  Fitting the model")}
+  modelResults = fitModel(readyDat$fit$load, fitDf, weightVec, verbose = 5)
 
+  if (verbose > 1) { print(" Leaving prepareAndFitModel()")}
+  Out = modelResults
+  return(Out)
+}
 
-main = function(loadFile,timeStampFile=NULL,occFile=NULL,weatherDirectory=NULL,tempDat=NULL,xPredThresh=NULL,
-	verbose=0) {
-	
-	loadDat = read.table(loadFile,
-		header=T,sep=",",as.is=T)
-	tLoad = getTime(loadDat[,1])
-	yLoad = loadDat[,2]
-	
-	occDat = read.table(occFile, header=T,sep=",",as.is=T)
-	tOcc = getTime(occDat[,1])
-	yOcc = occDat[,2]
-	
-	if (is.null(tempDat)) {
-		tempDat = combineWeatherData(weatherDirectory)
-	}	
-	tTemp = tempDat$results[,1]
-	yTemp = tempDat$results[,2]
-	
-	dataStruct = createDataStructure(tLoad,yLoad,tTemp,yTemp,tOcc,yOcc,
-		xPredThresh=xPredThresh,verbose=verbose)
-	#preparedData = prepareLBNLmodel(dataStruct)
-	# Need to call fitData here
+makeBaseline = function(readyDat, timescaleDays, xPredThresh=0.2, verbose = 0) {
+  # calculate total length of fit period, in days
+  timeNum = as.numeric(readyDat$fit$time)
+  totalIntervalLength = (tail(timeNum,1) - timeNum[1]) / (24 * 3600)
+  
+  nFits = 1 + floor(totalIntervalLength / timescaleDays)
+  individualLength = totalIntervalLength / nFits
+  timestep = individualLength * 24 * 60 * 60 # difference between "central time points" in seconds
+  
+  nFitPoints = length(readyDat$fit$time)
+  fitLoadMatrix = matrix(0,nrow = nFitPoints,ncol = nFits)
+  fitWeightMatrix = matrix(0,nrow = nFitPoints,ncol = nFits)
+  
+  nPredPoints = length(readyDat$pred$time)
+  predLoadMatrix = matrix(0,nrow = nPredPoints,ncol = nFits)
+  predWeightMatrix = matrix(0,nrow = nPredPoints,ncol = nFits)
 
-	Out = NULL
-	Out$dataStruct = dataStruct
-	Out$tempDat = tempDat
-	#Out$prepared = preparedData
-	return(Out)
+  for (i in 1:nFits) {
+    if (verbose > 3) {
+      print(paste("Doing fit number",i,"of",nFits))
+    }
+    centralTime = getTime(timeNum[1] + (i - 1) * timestep)
+    tFitDiff = as.numeric(difftime(readyDat$fit$time,centralTime,units = "days"))
+    tPredDiff = as.numeric(difftime(readyDat$pred$time,centralTime,units = "days"))
+    fitWeightVec = timescaleDays ^ 2 / (timescaleDays ^ 2 + tFitDiff ^ 2)
+    predWeightVec = timescaleDays ^ 2 / (timescaleDays ^ 2 + tPredDiff ^ 2)
+    
+    results = prepareAndFitModel(
+      readyDat, weightVec = fitWeightVec, xPredThresh = xPredThresh, verbose =
+        verbose
+    )
+    
+    #amod = lm(yVec ~ . + 0,data = predFrame, na.action = na.exclude,
+    #          weight = weightvec)
+    #SE <- sqrt(sum(residuals(amod) ^ 2, na.rm = T) / amod$df.residual)
+    
+    fitLoadMatrix[,i] = results$yFit
+    fitWeightMatrix[,i] = fitWeightVec
+    
+    predLoadMatrix[,i] = results$yPred
+    predWeightMatrix[,i] = predWeightVec
+    
+  }
+  
+  yPred = apply(predLoadMatrix * predWeightMatrix,1,sum) / apply(predWeightMatrix,1,sum)
+  yFit = apply(fitLoadMatrix * fitWeightMatrix,1,sum) / apply(fitWeightMatrix,1,sum)
+  
+  # All of the calculations above are done with "nice" time intervals, but the user could ask for any
+  # timestamps (like, what's the prediction at 2016-08-12 04:17:22), so interpolate to the times they want.
+  yPred = approx(as.numeric(readyDat$pred$time),yPred,as.numeric(readyDat$pred$tPred))[[2]]
+  
+  Out = NULL
+  Out$fit = NULL
+  Out$pred = NULL
+  
+  Out$fit$time = readyDat$fit$time
+  Out$fit$yLoad = yFit
+  Out$fit$yLoadMatrix = fitLoadMatrix
+  Out$fit$weightMatrix = fitWeightMatrix
+  
+  Out$pred$time  = readyDat$pred$time
+  Out$pred$yLoad = yPred
+  Out$pred$LoadMatrix = predLoadMatrix
+  Out$pred$weightMatrix = predWeightMatrix
+  Out$pred$tPred = readyDat$pred$tPred
+  Out$pred$yPred = yPred
+
+  return(Out)
+}
+
+preProcessData = function(inputDat, verbose = 0) {
+  if (verbose > 1) { print(" Defining time series for fit period.") }
+  fitDat = prepareTimeSeries(inputDat$fit, verbose = verbose)
+  
+  if (verbose > 1) { print(" Defining time series for prediction period.") }
+  predDat = prepareTimeSeries(
+    inputDat$pred, tStart = inputDat$pred$tPred[1], tEnd = tail(inputDat$pred$tPred,1),
+    intervalMinutes = fitDat$intervalMinutes, verbose = verbose
+  )
+  
+  readyDat = list(fitDat, predDat)
+  names(readyDat) = c("fit","pred")
+  return(readyDat)
+}
+
+main = function(loadFile, timeStampFile = NULL, inTemperatureFile = NULL, 
+                inPredTemperatureFile =NULL, xFile = NULL, predXfile = NULL, 
+                outGoodnessOfFitFile = NULL, outBaselineFile = NULL,
+                timescaleDays = 14, fahrenheit = T, xPredThresh = 0.2,
+                intervalMinutes = 15, 
+                writeOutputFiles = T, verbose = 0,
+                returnOutput = T) {
+  if (verbose > 0) print("Starting main()")
+  inputDat = readInputFiles(
+    loadFile, timeStampFile = timeStampFile,
+    inTemperatureFile = inTemperatureFile,
+    inPredTemperatureFile = inPredTemperatureFile,
+    xFile = xFile,
+    predXfile = predXfile,
+    outGoodnessOfFitFile = outGoodnessOfFitFile, 
+    verbose = verbose
+  )
+  
+  readyDat = preProcessData(inputDat, verbose = verbose)
+  
+  baselineInfo = makeBaseline(readyDat, timescaleDays = timescaleDays, verbose = verbose)
+  
+  trainingGOF = GoodnessOfFit(readyDat$fit$time, readyDat$fit$load,
+                              baselineInfo$fit$time, baselineInfo$fit$yLoad,
+                              verbose=verbose)
+  
+  if (!is.null(readyDat$pred$load)) {
+    predGOF = GoodnessOfFit(readyDat$pred$time, readyDat$pred$load,
+                          baselineInfo$pred$time, baselineInfo$pred$yLoad,
+                          verbose=verbose)
+  } else {
+    predGOF = NULL
+  }
+  if (writeOutputFiles) {
+    if (!is.null(outGoodnessOfFitFile)) {
+    write(t(cbind(names(trainingGOF),round(unlist(trainingGOF),3))),
+          outGoodnessOfFitFile,ncol=2,sep=",")
+    }
+    
+    if (!is.null(outBaselineFile)) {
+      baselineOut = cbind(as.character(baselineInfo$pred$tPred),round(baselineInfo$pred$yPred,2))
+      write(t(baselineOut),outBaselineFile,sep=",",ncol=2)
+    }
+  }
+  
+  Out = NULL
+  Out$inputDat = inputDat
+  Out$processedInputDat = readyDat
+  Out$baselineInfo = baselineInfo
+  Out$trainingGOF = trainingGOF
+  Out$predGOF = predGOF
+  if (verbose > 0) print("Leaving main()")
+  
+  if (returnOutput) {
+    return(Out)
+  } else {
+    return()
+  } 
 }
 
