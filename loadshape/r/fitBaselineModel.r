@@ -591,40 +591,6 @@ fillGaps = function(xvec,minGap=3.1, verbose=0) {
 	return(z)
 }	
 
-findTimeCategories = function(dataStruct, startupHours = 2) {
-  # Find "occupied" and "unoccupied" periods of the week; and
-  # split the occupied period into "startup" and "rest of day"
-  occMat = findOccUnocc(dataStruct$intervalOfWeek,dataStruct$load,dataStruct$temp,intervalMinutes,verbose=1) 
-  
-  okOcc = occMat[,2]
-  intervalMinutes = dataStruct$intervalMinutes	
-  
-  # for each time interval in occMat, what time of day does it represent?
-  hourOfDayLookup = rep(seq(from=0, to=24, by=intervalMinutes/60), 7)
-  hourOfDay = hourOfDayLookup[occMat[,1]] 
-  
-  okAfter4 = hourOfDay >= 4 # after 4 a.m. 	
-  
-  # Define "startup" as: any 'occupied' period within 4 hours of the start of the day,
-  # where the start of the day is defined as the first occupied period of the day after 4 a.m. 
-  okStartup = rep(0,nrow(occMat))
-  for (iDay in 0:6) {
-    okDay = (iDay*24*(60/intervalMinutes) <= occMat[,1]) &
-      (occMat[,1] < (iDay+1)*24*(60/intervalMinutes))
-    
-    todayStartTime = min(hourOfDay[okDay & okAfter4 & okOcc])
-    okStartup[okDay & okOcc & (todayStartTime <= hourOfDay) & 
-                (hourOfDay < (todayStartTime + startupHours))] = 1
-  }
-  okUnocc = !okOcc
-  okOccLater = okOcc & !okStartup
-  
-  timeCategoryMat = cbind(okUnocc,okStartup,okOccLater)
-  
-  return(timeCategoryMat)
-}
-
-
 findOccUnocc = function(intervalOfWeek, loadVec, TempF, intervalMinutes,verbose=1) {
 	if (verbose > 4) { print("    Starting findOccUnocc()") }
 	# Figure out which times of week a building is in one of two modes
@@ -677,7 +643,7 @@ findOccUnocc = function(intervalOfWeek, loadVec, TempF, intervalMinutes,verbose=
 
 
 
-defineModelVariables = function(inputDat, xPredThresh = 0.2, okInclude = NULL, verbose = 0) {
+defineModelVariables = function(inputDat, xPredThresh = 0.2, okInclude = NULL, includeStartup = T, verbose = 0) {
   # Create a data structure containing time, load, temperature, and predictive variables
   #
   # * Impute temperature and other predictive variables if necessary.
@@ -720,7 +686,7 @@ defineModelVariables = function(inputDat, xPredThresh = 0.2, okInclude = NULL, v
     # the building is heated or cooled within a tighter band).
     if (is.null(okInclude)) { okInclude = rep(T, length(fitDat$load))}
     timeCatDefinitions = determineTimeCategories(fitDat$time[okInclude], fitDat$load[okInclude], intervalMinutes,
-                                                 fitDat$TempF[okInclude],  verbose = verbose)
+                                                 fitDat$TempF[okInclude],  includeStartup = includeStartup, verbose = verbose)
     timeCategories = setTimeCategories(fitDat$time, timeCatDefinitions, intervalMinutes, verbose=verbose)
     timeCategoriesPred = setTimeCategories(predDat$tPred, timeCatDefinitions, intervalMinutes, verbose=verbose)
     
@@ -800,7 +766,7 @@ defineModelVariables = function(inputDat, xPredThresh = 0.2, okInclude = NULL, v
 
 
 determineTimeCategories = function(tLoad, load, intervalMinutes, temp = NULL,  startMinutes =
-                                     121, verbose = 0) {
+                                     121, includeStartup = T, verbose = 0) {
   if (verbose > 2) {
     print("  Starting determineTimeCategories")
   }
@@ -861,14 +827,18 @@ determineTimeCategories = function(tLoad, load, intervalMinutes, temp = NULL,  s
     nonOcc = !occ
     
     occStart = rep(F,nInterval)
-    occStart[uTOW %in% startIntervals] = T
     
+    if (includeStartup) {
+      occStart[uTOW %in% startIntervals] = T
+    }
     occNonStart = occMat[,2] & !occStart
     
     # There can be some funny cases: If there's a very brief occupied period, the rules above will lead to putting 
     # some times in "occ startup" that should be unoccupied. Fix this:
-    occStart[nonOcc] = 0
-    occNonStart[nonOcc] = 0 
+    occStart[nonOcc] = F
+    occNonStart[nonOcc] = F 
+    
+ 
     
     Out = cbind(uTOW,nonOcc,occ,occStart,occNonStart)
     
@@ -1047,7 +1017,7 @@ GoodnessOfFit = function(time1, loadVec, time2, baselinePred, verbose=1) {
 	return(Out)
 }
 
-prepareAndFitModel = function(readyDat, weightVec = null, xPredThresh = xPredThresh, verbose=verbose) {
+prepareAndFitModel = function(readyDat, weightVec = null, xPredThresh = xPredThresh, includeStartup = includeStartup, verbose=verbose) {
   if (verbose > 1) { print(" Starting prepareAndFitModel()")}
   if (!is.null(weightVec)) {
     # If weights are provided, use only the highly weighted data points to determine the occupied and unoccupied periods.
@@ -1061,8 +1031,8 @@ prepareAndFitModel = function(readyDat, weightVec = null, xPredThresh = xPredThr
   # vectors. This allows weights to be used in determining occupied/unoccupied periods rather than
   # just doing that once.
   
-  dataStruct = defineModelVariables(readyDat, xPredThresh = xPredThresh, okInclude = okInclude, verbose =
-                                      verbose)
+  dataStruct = defineModelVariables(readyDat, xPredThresh = xPredThresh, okInclude = okInclude, includeStartup = includeStartup, 
+                                    verbose = verbose)
   if (verbose > 2) { print(" Preparing data frame for fitting the model")}
   fitDf = prepareDataFrame(dataStruct$fit, verbose=verbose)
   predDf = prepareDataFrame(dataStruct$pred, verbose=verbose)
@@ -1077,7 +1047,7 @@ prepareAndFitModel = function(readyDat, weightVec = null, xPredThresh = xPredThr
   return(Out)
 }
 
-makeBaseline = function(readyDat, timescaleDays, xPredThresh=0.2, backwardOnly=F, verbose = 0) {
+makeBaseline = function(readyDat, timescaleDays, xPredThresh=0.2, backwardOnly=F, includeStartup = includeStartup, verbose = 0) {
   # calculate total length of fit period, in days
   timeNum = as.numeric(readyDat$fit$time)
   totalIntervalLength = (tail(timeNum,1) - timeNum[1]) / (24 * 3600)
@@ -1114,7 +1084,7 @@ makeBaseline = function(readyDat, timescaleDays, xPredThresh=0.2, backwardOnly=F
     }
     
     results = prepareAndFitModel(
-      readyDat, weightVec = fitWeightVec, xPredThresh = xPredThresh, verbose =
+      readyDat, weightVec = fitWeightVec, xPredThresh = xPredThresh, includeStartup = includeStartup, verbose =
         verbose
     )
     
@@ -1185,7 +1155,7 @@ leadingError = function(xvec, yvec, n=length(xvec)/5) {
 main = function(loadFile, timeStampFile = NULL, inTemperatureFile = NULL, 
                 inPredTemperatureFile =NULL, xFile = NULL, predXfile = NULL, 
                 outGoodnessOfFitFile = NULL, outBaselineFile = NULL,
-                timescaleDays = 14, fahrenheit = T, xPredThresh = 0.2,
+                timescaleDays = 14, fahrenheit = T, includeStartup = T, xPredThresh = 0.2,
                 intervalMinutes = 15, 
                 writeOutputFiles = T, verbose = 0,
                 returnOutput = T) {
@@ -1203,7 +1173,7 @@ main = function(loadFile, timeStampFile = NULL, inTemperatureFile = NULL,
   
   readyDat = preProcessData(inputDat, verbose = verbose)
   
-  baselineInfo = makeBaseline(readyDat, timescaleDays = timescaleDays, verbose = verbose)
+  baselineInfo = makeBaseline(readyDat, timescaleDays = timescaleDays, includeStartup = includeStartup, verbose = verbose)
   
   trainingGOF = GoodnessOfFit(readyDat$fit$time, readyDat$fit$load,
                               baselineInfo$fit$time, baselineInfo$fit$yLoad,
