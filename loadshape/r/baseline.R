@@ -43,11 +43,13 @@ option_list = list(
 	make_option(c("-s","--timeStampFile"),
 		help="Name of file that contains timestamps of baseline predictions (Required)"),			
 	make_option(c("-t","--temperatureFile"), 
+	  default = NULL,
 		help="Name of temperature data file (Optional, but required if model is to use temperature)"),
 	make_option(c("-f","--fahrenheit"),
 		default = T,
 		help="Temperatures are in Fahrenheit? [default %default]"),	
 	make_option(c("-p","--predictTemperatureFile"),
+	  default = NULL, 
 		help="Name of forecast or prediction temperature file (Optional)"),
 	make_option(c("-x","--xFile"),
 		default = NULL,
@@ -132,20 +134,20 @@ if (verbosity > 1) {
 writeOutputFiles = T 
 returnOutput = F
 
-main(loadFile=loadFile,
-	timeStampFile=timeStampFile,
-	inTemperatureFile=inTemperatureFile,
-	inPredTemperatureFile=inPredTemperatureFile,
-	xFile=xFile,
-	predXfile=predXfile,
-	outBaselineFile=outBaselineFile,
-	outGoodnessOfFitFile=outGoodnessOfFitFile,
-	intervalMinutes=intervalMinutes,
-	timescaleDays=timescaleDays, 
+main(loadFile = loadFile,
+	timeStampFile = timeStampFile,
+	inTemperatureFile = inTemperatureFile,
+	inPredTemperatureFile = inPredTemperatureFile,
+	xFile = xFile,
+	predXfile = predXfile,
+	outBaselineFile = outBaselineFile,
+	outGoodnessOfFitFile = outGoodnessOfFitFile,
+	intervalMinutes = intervalMinutes,
+	timescaleDays = timescaleDays, 
 	fahrenheit = fahrenheit,
 	writeOutputFiles = writeOutputFiles,
 	returnOutput = returnOutput,
-	verbose=verbosity)
+	verbose = verbosity)
 
 if (verbosity > 1) { print("Done.") }	
 	
