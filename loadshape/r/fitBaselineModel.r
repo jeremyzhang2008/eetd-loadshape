@@ -74,9 +74,7 @@ readInputFiles = function(loadFile, timeStampFile=NULL, inTemperatureFile=NULL,
   
   # If only the input temperature file is provided, use it for both fit and prediction periods
   if (is.null(inPredTemperatureFile) && !is.null(inTemperatureFile)) {
-    tTempPred = tTemp
-    predTempF = TempF
-    predTempC = TempC
+    inPredTemperatureFile = inTemperatureFile
   }
   
   if (!is.null(inPredTemperatureFile)) {
@@ -92,19 +90,24 @@ readInputFiles = function(loadFile, timeStampFile=NULL, inTemperatureFile=NULL,
     }
   }
   
-  # If only one file of additional predictive variables is provided, use it for both fit and prediction periods
   if (!is.null(xFile)) {
     xDat = read.table(xFile, header=F, sep=",", as.is=T)
     tX = getTime(xDat[,1])
     xMat = xDat[,-1]
   }  
   
+  # If only one file of additional predictive variables is provided, use it for both fit and prediction periods
   if (is.null(predXfile) && !is.null(xFile)) { 
     predXfile = xFile
+  }
+  
+  if (!is.null(predXfile)) {
     xPredDat = read.table(predXfile, header=F, sep=",", as.is=T)
     tPredX = getTime(xPredDat[,1])
     xPredMat = xPredDat[,-1]
   }
+  
+  
   Out = NULL
   Out$fit = NULL
   Out$fit$tLoad = tLoad
@@ -161,6 +164,7 @@ getTime = function(timeInfo,verbose=1,format=NULL, tz="") {
     return(time)
   }	
   
+  ### Much of the following should be replaced by calls to functions in the lubridate library
   if(grepl(":",timeInfo[1])[1]) {
     nColons = sapply(regmatches(timeInfo[1], gregexpr(":", timeInfo[1])), length)
     if(grepl("/", timeInfo[1])[1]) {
@@ -201,6 +205,19 @@ getTime = function(timeInfo,verbose=1,format=NULL, tz="") {
   return(time)	
 }
 
+calcTOW = function(timeVec, intervalMinutes) {
+  minuteOfWeek = 24 * 60 * timeVec$wday + 60 * timeVec$hour + timeVec$min
+  minuteOfDay = 60 * timeVec$hour + timeVec$min
+  intervalOfWeek = 1 + floor(minuteOfWeek / intervalMinutes)
+  intervalOfDay = 1 + floor(minuteOfDay / intervalMinutes)
+  Out = NULL
+  Out$minuteOfWeek = minuteOfWeek
+  Out$minuteOfDay = minuteOfDay
+  Out$intervalOfWeek = intervalOfWeek
+  Out$intervalOfDay = intervalOfDay
+  return(Out)
+}
+
 #
 imputeTimeSeries = function(timeVec, yVec, xTime=NULL, xMat=NULL, outTimes=NULL, 
                             timeFactor="TOW", intervalMinutes = NULL, verbose=0) {
@@ -208,20 +225,6 @@ imputeTimeSeries = function(timeVec, yVec, xTime=NULL, xMat=NULL, outTimes=NULL,
   if (!(timeFactor %in% c("TOW","TOD"))) { stop("Unrecognized time pattern in imputeTimeSeries.") }
   if (is.null(outTimes)) { outTimes = timeVec }
   if (is.null(intervalMinutes)) {intervalMinutes = median(diff(as.numeric(timeVec)))/60 }
-  
-  minuteOfWeek = 24 * 60 * timeVec$wday + 60 * timeVec$hour + timeVec$min
-  minuteOfDay = 60 * timeVec$hour + timeVec$min
-  intervalOfWeek = 1 + floor(minuteOfWeek / intervalMinutes)
-  intervalOfDay = 1 + floor(minuteOfDay / intervalMinutes)
-  weekNum = floor(1 + as.numeric(difftime(timeVec,timeVec[1],units="weeks")))
-  
-  predMinuteOfWeek = 24 * 60 * outTimes$wday + 60 * outTimes$hour + outTimes$min
-  predMinuteOfDay = 60 * outTimes$hour + outTimes$min
-  predIntervalOfWeek = 1 + floor(predMinuteOfWeek / intervalMinutes)
-  predIntervalOfDay = 1 + floor(predMinuteOfDay / intervalMinutes)
-  predWeekNum = floor(1 + as.numeric(difftime(outTimes,timeVec[1],units="weeks")))
-  
-  uWeekNums = unique(c(weekNum, predWeekNum))
   
   # If we have data for the output times, fill them in
   nOut = length(outTimes)
@@ -233,8 +236,19 @@ imputeTimeSeries = function(timeVec, yVec, xTime=NULL, xMat=NULL, outTimes=NULL,
     yOut[tmatch] = yVec[okT]
   }
   
-  maxInterpLen = 4 * (60/intervalMinutes)  # Number of intervals in 4 hours
-  if (any(is.na(yOut))) {
+  if (!any(is.na(yOut))) { 
+    # No imputation needed: we are done.
+    return(yOut)
+  } else {
+    fitIntervals = calcTOW(timeVec)
+    predIntervals = calcTOW(outTimes)
+    
+    weekNum = floor(1 + as.numeric(difftime(timeVec,timeVec[1],units="weeks")))
+    predWeekNum = floor(1 + as.numeric(difftime(outTimes,timeVec[1],units="weeks")))
+    
+    uWeekNums = unique(c(weekNum, predWeekNum))
+    
+    maxInterpLen = 4 * (60/intervalMinutes)  # Number of intervals in 4 hours
     # Interpolate short runs of missing data.
     isNA = is.na(yOut)
     rl = rle(isNA)
@@ -257,19 +271,19 @@ imputeTimeSeries = function(timeVec, yVec, xTime=NULL, xMat=NULL, outTimes=NULL,
     yAugmented= c(yVec,rep(0,length(uWeekNums)))
     augmentX = rep(10000,length(uWeekNums))
     if (timeFactor == "TOW") {
-      fitDf = data.frame(factor(c(intervalOfWeek, augmentX)), factor(c(weekNum, uWeekNums)))
-      predDf = data.frame(factor(c(predIntervalOfWeek,augmentX)), factor(c(predWeekNum,uWeekNums)))
+      fitDf = data.frame(factor(c(fitIntervals$intervalOfWeek, augmentX)), factor(c(weekNum, uWeekNums)))
+      predDf = data.frame(factor(c(predIntervals$intervalOfWeek,augmentX)), factor(c(predWeekNum,uWeekNums)))
       names(fitDf) = c("intervalOfWeek", "weekNum")
       names(predDf) = c("intervalOfWeek", "weekNum")
     } else {
-      fitDf = data.frame(factor(c(intervalOfDay, augmentX)), factor(c(weekNum, uWeekNums)))
-      predDf = data.frame(factor(c(predIntervalOfDay, augmentX)), factor(c(predWeekNum, uWeekNums)))
+      fitDf = data.frame(factor(c(fitIntervals$intervalOfDay, augmentX)), factor(c(weekNum, uWeekNums)))
+      predDf = data.frame(factor(c(predIntervals$intervalOfDay, augmentX)), factor(c(predWeekNum, uWeekNums)))
       names(fitDf) = c("intervalOfDay","weekNum")
       names(predDf) = c("intervalOfDay","weekNum")
     }
     
     amod = lm(yAugmented ~ . + 0, data = fitDf, na.action = na.exclude)
-    ypred = predict(amod,predDf)[1:nOut]  # We just want predicted data; After the nOut entry are the week effects.
+    ypred = predict(amod,predDf)[1:nOut]  # We just want predicted data; After the first nOut predictions are the week effects.
     
     okNA = is.na(yOut)
     yOut[okNA] = ypred[okNA]
@@ -289,7 +303,7 @@ imputeTimeSeries = function(timeVec, yVec, xTime=NULL, xMat=NULL, outTimes=NULL,
       predDf = cbind(predDf, XX)
       
       bmod = lm(yAugmented ~ . + 0, data = fitDf, na.action = na.exclude)
-      ypred = predict(bmod,predDf)[1:nOut]  # We just want prediced data; After the nOut entry are the week effects.
+      ypred = predict(bmod,predDf)[1:nOut]  # We just want predicted data; After the first nOut predictions  are the week effects.
       
       okNA = is.na(yOut)
       yOut[okNA] = ypred[okNA]
@@ -384,7 +398,6 @@ prepareTimeSeries = function(inputDat, tStart=NULL, tEnd=NULL, intervalMinutes=N
   tXorig = inputDat$tX
   xMatOrig = inputDat$xMat
 
-  
   ####
   # If tPred isn't provided but load data are provided, use the start and end times from the load data.
   # 
@@ -423,9 +436,8 @@ prepareTimeSeries = function(inputDat, tStart=NULL, tEnd=NULL, intervalMinutes=N
   }
   
   ####
- 
-  minuteOfWeek = 24 * 60 * timePoints$wday + 60 * timePoints$hour + timePoints$min
-  intervalOfWeek = 1 + floor(minuteOfWeek / intervalMinutes)
+  timeIntervals = calcTOW(timePoints)
+  intervalOfWeek = timeIntervals$intervalOfWeek
    
   if (is.null(tStart)) { tStart = timePoints[1] }
   if (is.null(tEnd)) { tEnd = tail(timePoints,1) }
@@ -771,8 +783,9 @@ determineTimeCategories = function(tLoad, load, intervalMinutes, temp = NULL,  s
     print("  Starting determineTimeCategories")
   }
   
-  minuteOfWeek = 24 * 60 * tLoad$wday + 60 * tLoad$hour + tLoad$min
-  intervalOfWeek = 1 + floor(minuteOfWeek / intervalMinutes)
+  timeIntervals = calcTOW(tLoad)
+  intervalOfWeek = timeIntervals$intervalOfWeek
+  
   uTOW = sort(unique(intervalOfWeek))
   nInterval = length(uTOW)
   if (is.null(temp)) {
@@ -852,8 +865,7 @@ determineTimeCategories = function(tLoad, load, intervalMinutes, temp = NULL,  s
 }
 
 setTimeCategories = function(tLoad, timeCategoryDefinitions, intervalMinutes, verbose=0) {
-  minuteOfWeek = 24*60*tLoad$wday+60*tLoad$hour + tLoad$min
-  intervalOfWeek = 1+floor(minuteOfWeek/intervalMinutes)
+  intervalOfWeek = calcTOW(tLoad)$intervalOfWeek
   timeCategoryMat = matrix(F,nrow=length(tLoad),ncol=ncol(timeCategoryDefinitions)-1)
   for (icol in 1:ncol(timeCategoryMat)) {
     timeCategoryMat[,icol] = intervalOfWeek %in% timeCategoryDefinitions[timeCategoryDefinitions[,1+icol]==1,"uTOW"]
