@@ -926,7 +926,7 @@ fitMultipleModels = function(dataStructure) {
     }
     centralTime = getTime(timeNum[1] + (i - 1) * timestep)
     tDiff = as.numeric(difftime(timeVec,centralTime,units = "days"))
-    weightvec = 14 ^ 2 / (14 ^ 2 + tDiff ^ 2)
+    weightvec = timescaleDays ^ 2 / (timescaleDays ^ 2 + tDiff ^ 2)
     amod = lm(yVec ~ . + 0,data = predFrame, na.action = na.exclude,
               weight = weightvec)
     SE <- sqrt(sum(residuals(amod) ^ 2, na.rm = T) / amod$df.residual)
@@ -1167,7 +1167,7 @@ leadingError = function(xvec, yvec, n=length(xvec)/5) {
 main = function(loadFile, timeStampFile = NULL, inTemperatureFile = NULL, 
                 inPredTemperatureFile =NULL, xFile = NULL, predXfile = NULL, 
                 outGoodnessOfFitFile = NULL, outBaselineFile = NULL,
-                timescaleDays = 14, fahrenheit = T, includeStartup = T, xPredThresh = 0.2,
+                timescaleDays = timescaleDays, fahrenheit = T, includeStartup = T, xPredThresh = 0.2,
                 intervalMinutes = 15, 
                 writeOutputFiles = T, verbose = 0,
                 returnOutput = T) {
