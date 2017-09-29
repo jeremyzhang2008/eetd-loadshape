@@ -1064,7 +1064,7 @@ makeBaseline = function(readyDat, timescaleDays, xPredThresh=0.2, backwardOnly=F
   timeNum = as.numeric(readyDat$fit$time)
   totalIntervalLength = (tail(timeNum,1) - timeNum[1]) / (24 * 3600)
   
-  nFits = floor(totalIntervalLength / timescaleDays)
+  nFits = ceiling(totalIntervalLength / timescaleDays)
   individualLength = totalIntervalLength / nFits
   timestep = individualLength * 24 * 60 * 60 # difference between "central time points" in seconds
   
