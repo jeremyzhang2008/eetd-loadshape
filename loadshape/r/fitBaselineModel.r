@@ -240,8 +240,8 @@ imputeTimeSeries = function(timeVec, yVec, xTime=NULL, xMat=NULL, outTimes=NULL,
     # No imputation needed: we are done.
     return(yOut)
   } else {
-    fitIntervals = calcTOW(timeVec)
-    predIntervals = calcTOW(outTimes)
+    fitIntervals = calcTOW(timeVec, intervalMinutes)
+    predIntervals = calcTOW(outTimes, intervalMinutes)
     
     weekNum = floor(1 + as.numeric(difftime(timeVec,timeVec[1],units="weeks")))
     predWeekNum = floor(1 + as.numeric(difftime(outTimes,timeVec[1],units="weeks")))
@@ -436,7 +436,7 @@ prepareTimeSeries = function(inputDat, tStart=NULL, tEnd=NULL, intervalMinutes=N
   }
   
   ####
-  timeIntervals = calcTOW(timePoints)
+  timeIntervals = calcTOW(timePoints, intervalMinutes)
   intervalOfWeek = timeIntervals$intervalOfWeek
    
   if (is.null(tStart)) { tStart = timePoints[1] }
@@ -783,7 +783,7 @@ determineTimeCategories = function(tLoad, load, intervalMinutes, temp = NULL,  s
     print("  Starting determineTimeCategories")
   }
   
-  timeIntervals = calcTOW(tLoad)
+  timeIntervals = calcTOW(tLoad, intervalMinutes)
   intervalOfWeek = timeIntervals$intervalOfWeek
   
   uTOW = sort(unique(intervalOfWeek))
@@ -865,7 +865,7 @@ determineTimeCategories = function(tLoad, load, intervalMinutes, temp = NULL,  s
 }
 
 setTimeCategories = function(tLoad, timeCategoryDefinitions, intervalMinutes, verbose=0) {
-  intervalOfWeek = calcTOW(tLoad)$intervalOfWeek
+  intervalOfWeek = calcTOW(tLoad, intervalMinutes)$intervalOfWeek
   timeCategoryMat = matrix(F,nrow=length(tLoad),ncol=ncol(timeCategoryDefinitions)-1)
   for (icol in 1:ncol(timeCategoryMat)) {
     timeCategoryMat[,icol] = intervalOfWeek %in% timeCategoryDefinitions[timeCategoryDefinitions[,1+icol]==1,"uTOW"]
